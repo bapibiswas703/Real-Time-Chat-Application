@@ -4,6 +4,11 @@
     "target": "ES2023",
     "lib": ["ES2023"],
     "moduleResolution": "NodeNext",
+    "paths": {
+      "@/common/*": ["./src/common/*"],
+      "@/config/*": ["./src/config/*"],
+      "@/shared/*": ["./src/shared/*"]
+    },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,

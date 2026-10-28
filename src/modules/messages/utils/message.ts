@@ -1,4 +1,4 @@
-import { AppError } from '../../../common/errors';
+import { AppError } from '@/common/errors';
 export interface MessageOrder {
   seconds: number;
   nanoseconds: number;

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { DatabaseService } from '../../../shared/database/database.module';
+import { DatabaseService } from '@/shared/database/database.module';
 
 @Injectable()
 export class ChatsRepository {

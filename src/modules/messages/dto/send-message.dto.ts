@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
-import { normalizeUuid } from '../../../common/dto/common.dto';
+import { normalizeUuid } from '@/common/dto/common.dto';
 
 export class SendMessageDto {
   @ApiProperty({ format: 'uuid' }) @normalizeUuid @IsUUID() senderId!: string;

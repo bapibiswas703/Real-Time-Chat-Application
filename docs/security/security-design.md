@@ -41,7 +41,15 @@ Separate SQL migration ownership from runtime permissions. Runtime roles must no
 
 ## Redis and operational controls
 
-HTTP and socket limits fail closed on coordination failure; typing has its own window. The backend uses the direct peer address with trust-proxy disabled. Configure a reviewed ingress/proxy topology and restrict/rate-limit public health routes. Shared fixed-window counters and process-local caps do not replace ingress traffic controls.
+HTTP IP admission precedes JSON parsing and covers versioned routes, Swagger, unknown routes and public readiness. Cheap liveness and handled CORS preflight are exempt. A bearer-token digest has a pre-verification quota; verified identities have an additional quota afterward. The digest never authorizes a request. Atomic Redis Lua returns count and remaining TTL, including repair of a counter that lost its expiry. HTTP 429 includes Retry-After and quota/reset headers. HTTP and socket limits fail closed on coordination failure; typing has its own window.
+
+The backend explicitly disables trust-proxy and uses the direct peer address. Forged X-Forwarded-For cannot select another quota. Configure a reviewed ingress/proxy topology and protect health probes against volumetric traffic. Shared fixed-window counters and process-local caps do not replace ingress traffic controls.
+
+## Response headers and CORS
+
+Helmet sets Content-Security-Policy, X-Content-Type-Options=nosniff, X-Frame-Options=DENY and Referrer-Policy=no-referrer. CSP frame-ancestors is none. Permissions-Policy disables camera, microphone and geolocation. Responses carry Cache-Control=no-store; Express X-Powered-By and dynamic ETags are disabled. Request IDs are server-generated. Tests cover success/error responses and production/development differences.
+
+Production enables HSTS (31536000 seconds, includeSubDomains) and CSP upgrade-insecure-requests. Both HTTPS-only policies are disabled for local HTTP development. Swagger stays disabled in production; development assets work under the same-origin CSP. CORS rejects unlisted origins, permits only the configured exact origins and exposes request-ID/quota headers without cookie credentials. CORS preflight is not authentication; every actual private request still requires a Firebase token.
 
 Presence leases last 30 seconds; typing leases last 5 seconds. Redis server time controls expiry. Adapter channels carry private payloads and are trusted internal infrastructure. Use private networking, authentication/ACLs and TLS according to the environment. Main and adapter connections can fail independently; durable history is the recovery path.
 

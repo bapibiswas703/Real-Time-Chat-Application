@@ -1,7 +1,7 @@
 import { ChatsRepository } from '../../src/modules/chats/repository/chats.repository';
 import { directPairKey } from '../../src/modules/chats/utils/direct-pair';
 import { ChatsService } from '../../src/modules/chats/service/chats.service';
-import { DatabaseService } from '../../src/shared/database/database.module';
+import { DatabaseService } from '@/shared/database/database.module';
 import { UsersService } from '../../src/modules/users/service/users.service';
 
 describe('Direct chat authorization and canonical identity', () => {

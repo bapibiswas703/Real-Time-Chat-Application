@@ -1,5 +1,5 @@
 import { AuthService } from '../../src/modules/auth/service/auth.service';
-import { FirebaseService } from '../../src/shared/firebase/firebase.module';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
 import { UsersService } from '../../src/modules/users/service/users.service';
 
 describe('Firebase authentication policy', () => {

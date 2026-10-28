@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { AppConfig, CONFIG } from '../../config/configuration';
+import { AppConfig, CONFIG } from '@/config/configuration';
 
 @Injectable()
 export class DatabaseService

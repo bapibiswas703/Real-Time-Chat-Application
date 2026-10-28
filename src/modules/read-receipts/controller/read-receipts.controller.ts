@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { User } from '@prisma/client';
-import { Actor } from '../../../common/http-auth';
-import { ChatPathDto, MessagePathDto } from '../../../common/dto/common.dto';
+import { Actor } from '@/common/http-auth';
+import { ChatPathDto, MessagePathDto } from '@/common/dto/common.dto';
 import { ReadReceiptsService } from '../service/read-receipts.service';
 import { ReadDto, LastSeenDto } from '../dto/read-receipts.dto';
 

@@ -31,4 +31,4 @@ LiveEvents is ephemeral; there is no outbox or replay worker. The durable histor
 
 ## Revocation and health checks
 
-Authorization has an unavoidable small verification-to-transmission race with a remote account revocation. Rechecks on every event, before each broadcast, and periodic renewal bound idle socket cleanup without caching token verification. Already-transmitted data cannot be recalled. Health checks time out their response after 3 seconds; underlying SDK/network work may continue, so ingress must rate-limit public health endpoints.
+Authorization has an unavoidable small verification-to-transmission race with a remote account revocation. Rechecks on every event, before each broadcast, and periodic renewal bound idle socket cleanup without caching token verification. Already-transmitted data cannot be recalled. Dependency checks inside readiness are bounded to 3 seconds; its earlier Redis admission command can also take up to its configured 5-second timeout. Configure probe timeouts accordingly. Underlying SDK work may continue after a bounded response. Liveness stays independent of Redis; ingress must still protect public probe traffic.

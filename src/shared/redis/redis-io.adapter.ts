@@ -2,8 +2,8 @@ import { INestApplicationContext, Logger } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Server, ServerOptions } from 'socket.io';
-import { AppConfig } from '../../config/configuration';
-import { RedisService } from './redis.module';
+import { AppConfig } from '@/config/configuration';
+import { RedisService } from '@/shared/redis/redis.module';
 
 export class RedisIoAdapter extends IoAdapter {
   private readonly pub;

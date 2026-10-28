@@ -8,11 +8,13 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { createHash } from 'node:crypto';
 import { User } from '@prisma/client';
 import { AuthService } from '../modules/auth/service/auth.service';
-import { AppError } from './errors';
-import { RedisService } from '../shared/redis/redis.module';
-import { AppConfig, CONFIG } from '../config/configuration';
+import { AppError } from '@/common/errors';
+import { RedisService } from '@/shared/redis/redis.module';
+import { AppConfig, CONFIG } from '@/config/configuration';
+import { consumeHttpQuota } from '@/common/http-rate-limit';
 
 export interface AuthRequest extends Request {
   actor: User;
@@ -46,14 +48,26 @@ export class HttpAuthGuard implements CanActivate {
     );
     if (!match?.[1])
       throw new AppError('UNAUTHENTICATED', 'Bearer token required');
+    if (match[1].length > 8192)
+      throw new AppError('UNAUTHENTICATED', 'Invalid authentication');
+    const response = context
+      .switchToHttp()
+      .getResponse<import('express').Response>();
+    // An opaque token digest is an admission key only, never a trusted identity.
+    const tokenKey = createHash('sha256').update(match[1]).digest('hex');
+    await consumeHttpQuota(
+      this.redis,
+      `http-token:${tokenKey}`,
+      this.config.httpRateLimit,
+      response,
+    );
     request.actor = (await this.auth.verify(match[1])).user;
-    if (
-      !(await this.redis.rateLimit(
-        `http-user:${request.actor.id}`,
-        this.config.httpRateLimit,
-      ))
-    )
-      throw new AppError('RATE_LIMITED', 'Request rate limit exceeded');
+    await consumeHttpQuota(
+      this.redis,
+      `http-user:${request.actor.id}`,
+      this.config.httpRateLimit,
+      response,
+    );
     return true;
   }
 }

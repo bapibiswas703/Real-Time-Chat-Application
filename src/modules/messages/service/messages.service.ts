@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Transaction } from 'firebase-admin/firestore';
 import { performance } from 'node:perf_hooks';
-import { AppError, assertIdentity } from '../../../common/errors';
+import { AppError, assertIdentity } from '@/common/errors';
 import {
   LiveEvents,
   Metrics,
-} from '../../../shared/observability/observability.module';
+} from '@/shared/observability/observability.module';
 import { ChatsService } from '../../chats/service/chats.service';
 import { PersistedMessage, validateText } from '../utils/message';
 import { MessagesRepository } from '../repository/messages.repository';

@@ -11,14 +11,14 @@ import { Server, Socket } from 'socket.io';
 import { ClassConstructor, plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { randomUUID } from 'node:crypto';
-import { AppConfig, CONFIG } from '../../../config/configuration';
-import { AppError } from '../../../common/errors';
-import { RedisService } from '../../../shared/redis/redis.module';
+import { AppConfig, CONFIG } from '@/config/configuration';
+import { AppError } from '@/common/errors';
+import { RedisService } from '@/shared/redis/redis.module';
 import {
   LiveEvent,
   LiveEvents,
   Metrics,
-} from '../../../shared/observability/observability.module';
+} from '@/shared/observability/observability.module';
 import {
   AuthenticatedIdentity,
   AuthService,

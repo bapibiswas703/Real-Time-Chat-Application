@@ -1,8 +1,13 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { Public } from '../../common/http-auth';
-import { DatabaseService } from '../database/database.module';
-import { FirebaseService } from '../firebase/firebase.module';
-import { RedisService } from '../redis/redis.module';
+import {
+  Controller,
+  Get,
+  ServiceUnavailableException,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
+import { Public } from '@/common/http-auth';
+import { DatabaseService } from '@/shared/database/database.module';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
+import { RedisService } from '@/shared/redis/redis.module';
 
 async function bounded(check: Promise<unknown>): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -21,7 +26,7 @@ async function bounded(check: Promise<unknown>): Promise<boolean> {
   }
 }
 @Public()
-@Controller('health')
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {
   constructor(
     private readonly db: DatabaseService,

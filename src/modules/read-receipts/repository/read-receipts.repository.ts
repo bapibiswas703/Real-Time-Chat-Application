@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { FieldValue, Timestamp, Transaction } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../../shared/firebase/firebase.module';
-import { AppError } from '../../../common/errors';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
+import { AppError } from '@/common/errors';
 import {
   compareOrder,
   MessageOrder,

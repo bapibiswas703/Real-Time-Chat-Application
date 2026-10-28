@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { DecodedIdToken } from 'firebase-admin/auth';
-import { AppError } from '../../../common/errors';
-import { FirebaseService } from '../../../shared/firebase/firebase.module';
+import { AppError } from '@/common/errors';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
 import { UsersService } from '../../users/service/users.service';
 
 export interface AuthenticatedIdentity {

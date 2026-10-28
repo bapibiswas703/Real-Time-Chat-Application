@@ -4,18 +4,18 @@ import { Test } from '@nestjs/testing';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
-import { CONFIG, validateEnvironment } from '../../src/config/configuration';
+import { CONFIG, validateEnvironment } from '@/config/configuration';
 import { AuthService } from '../../src/modules/auth/service/auth.service';
 import { ChatsService } from '../../src/modules/chats/service/chats.service';
 import { PresenceService } from '../../src/modules/presence/service/presence.service';
-import { DatabaseService } from '../../src/shared/database/database.module';
-import { FirebaseService } from '../../src/shared/firebase/firebase.module';
-import { RedisService } from '../../src/shared/redis/redis.module';
+import { DatabaseService } from '@/shared/database/database.module';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
+import { RedisService } from '@/shared/redis/redis.module';
 import { FirestoreDouble } from '../fixtures/firestore-double';
-import { AppError } from '../../src/common/errors';
+import { AppError } from '@/common/errors';
 import { Ack } from '../../src/modules/realtime/dto/events.dto';
 import { ChatGateway } from '../../src/modules/realtime/gateway/chat.gateway';
-import { Metrics } from '../../src/shared/observability/observability.module';
+import { Metrics } from '@/shared/observability/observability.module';
 
 describe('Real Socket.IO transport with infrastructure test doubles', () => {
   let app: INestApplication;

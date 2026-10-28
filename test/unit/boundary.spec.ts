@@ -1,10 +1,10 @@
-import { safeError } from '../../src/common/http-boundary';
-import { AppError } from '../../src/common/errors';
-import { RedisService } from '../../src/shared/redis/redis.module';
+import { safeError } from '@/common/http-boundary';
+import { AppError } from '@/common/errors';
+import { RedisService } from '@/shared/redis/redis.module';
 import { PresenceService } from '../../src/modules/presence/service/presence.service';
-import { AppConfig } from '../../src/config/configuration';
+import { AppConfig } from '@/config/configuration';
 import { INestApplicationContext } from '@nestjs/common';
-import { RedisIoAdapter } from '../../src/shared/redis/redis-io.adapter';
+import { RedisIoAdapter } from '@/shared/redis/redis-io.adapter';
 
 describe('Safe failure boundaries', () => {
   it('does not leak SDK details or secrets', () => {

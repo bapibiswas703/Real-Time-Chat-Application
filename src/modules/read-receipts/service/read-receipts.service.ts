@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { AppError, assertIdentity } from '../../../common/errors';
-import { LiveEvents } from '../../../shared/observability/observability.module';
+import { AppError, assertIdentity } from '@/common/errors';
+import { LiveEvents } from '@/shared/observability/observability.module';
 import { MessagesService } from '../../messages/service/messages.service';
 import { ChatsService } from '../../chats/service/chats.service';
 import { ReadReceiptsRepository } from '../repository/read-receipts.repository';

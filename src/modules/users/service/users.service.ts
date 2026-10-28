@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { UsersRepository } from '../repository/users.repository';
-import { AppError } from '../../../common/errors';
+import { AppError } from '@/common/errors';
 
 export interface VerifiedProfile {
   uid: string;

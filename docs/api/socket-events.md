@@ -2,10 +2,10 @@
 
 ## Connect and authenticate
 
-Use Socket.IO 4.x over WebSocket transport:
+Use Socket.IO 4.x over WebSocket transport. `SERVER_ORIGIN` is the server origin, such as `http://localhost:3000`, without the REST `/api/v1` suffix. The Engine.IO path stays `/socket.io`; REST versioning does not change namespaces or event names:
 
 ```ts
-const socket = io(API_URL, {
+const socket = io(SERVER_ORIGIN, {
   transports: ['websocket'],
   auth: { token: await firebaseUser.getIdToken() },
 });
@@ -24,7 +24,7 @@ socket.emit(
 );
 ```
 
-Provider authentication uses the Firebase client SDK; internalUserId comes from `/auth/me`. Reconnect with a refreshed Firebase ID token when the existing token expires. Invalid handshakes get a generic connect_error. Room joins authorize access but never replace per-event/per-recipient checks. Maximum 100 joined chats per connection, 128 established/pending connections per process and 16 KiB inbound frames. Excess capacity gets the same generic handshake error.
+Provider authentication uses the Firebase client SDK; internalUserId comes from `/api/v1/auth/me`. Reconnect with a refreshed Firebase ID token when the existing token expires. Invalid handshakes get a generic connect_error. Room joins authorize access but never replace per-event/per-recipient checks. Maximum 100 joined chats per connection, 128 established/pending connections per process and 16 KiB inbound frames. Excess capacity gets the same generic handshake error.
 
 ## Acknowledgements and validation
 

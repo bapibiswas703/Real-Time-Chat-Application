@@ -1,5 +1,5 @@
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../src/shared/firebase/firebase.module';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
 
 type Row = Record<string, unknown>;
 class Snapshot {

@@ -13,7 +13,7 @@ import {
 } from 'firebase-admin/app';
 import { Auth, getAuth } from 'firebase-admin/auth';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
-import { AppConfig, CONFIG } from '../../config/configuration';
+import { AppConfig, CONFIG } from '@/config/configuration';
 import { randomUUID } from 'node:crypto';
 
 @Injectable()

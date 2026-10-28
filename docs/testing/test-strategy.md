@@ -10,6 +10,7 @@ npm run typecheck
 npm run build
 npm run test:coverage
 npm run security:scan
+npm run test:redis
 npm audit --omit=dev
 npm run firebase:check
 ```
@@ -23,7 +24,11 @@ npm run firebase:check
 | `test/secret-scan.cjs`          | Worktree/staged-blob credential filename/private-key/token scan                                                                           | Git and Node built-ins; not a complete history/all-formats audit |
 | `test/firebase-cloud-check.cjs` | Actual Admin credential exchange, Auth permission and Firestore read; explicit opt-in write probe                                         | Live configured Firebase project                                 |
 
-The current regression baseline is 69 ordinary tests across ten suites, plus two Node secret-guard tests. Coverage and execution limits are in the [verification report](../security/final-audit.md). Transport tests are not labeled database integration.
+The current regression baseline is 82 ordinary tests across eleven suites, plus two Node secret-guard tests. Coverage and execution limits are in the [verification report](../security/final-audit.md). Transport tests are not labeled database integration.
+
+Version/header regressions also cover configurable URI prefixes, production HSTS, development Swagger/CSP, unversioned liveness, pre-parser rejection, retry/reset headers, forged forwarded IPs, exact CORS, and denial before expensive authentication. `test/e2e/http-security.spec.ts` runs an isolated real HTTP server with a coordination double.
+
+`npm run test:redis` selects only `test/integration/redis-rate-limit.spec.ts`. It uses the configured loopback Redis, verifies concurrent admission, expiry preservation, missing-TTL repair and the boolean socket limiter API, then deletes its own unique keys. It does not require Firebase emulators or touch existing application counters. The test rejects non-loopback Redis and non-test mode. The complete integration command still includes the separate Firebase-backed suite and requires its isolated prerequisites below.
 
 ## Isolated infrastructure tests
 
@@ -55,5 +60,7 @@ GitHub Actions provisions PostgreSQL 17/Redis 7.4, Node 22 and Java 21. It runs 
 The Node build uses `module` and `moduleResolution` set to `NodeNext`, matching current Node package resolution. With the package's default CommonJS format, emitted application files remain CommonJS on Node 22.22.1+.
 
 Jest uses native ESM TypeScript output through `tsconfig.jest.json`, ts-jest and the VM modules flag. Its `ES2022` module setting uses `bundler` resolution for Jest's transformed, extensionless imports. A narrowly scoped Babel transform handles Firebase Admin's synchronous `jose` dependency only in tests. Neither configuration uses the deprecated `node`/`node10` resolver.
+
+TypeScript paths map `@/common/*`, `@/config/*` and `@/shared/*` to their source folders; Jest has matching moduleNameMapper entries. Build scripts run tsc-alias after tsc so compiled Node/Docker code uses relative requires. `npm run dev` uses tsc-watch and starts its server only after successful compilation and alias rewriting. `start:dev` invokes the same watcher; `build:watch` compiles/rewrites without starting a server. The two watch helpers are development dependencies only.
 
 Record PASSED, FAILED, BLOCKED and NOT EXECUTED separately. Historical integration results do not establish a later revision's integration status. Actual provider login, container UID/signals, remote CI, cloud load/outages, restore and monitoring require their own evidence.

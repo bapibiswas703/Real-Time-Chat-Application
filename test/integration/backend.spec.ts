@@ -6,11 +6,11 @@ import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
-import { AppConfig, CONFIG } from '../../src/config/configuration';
-import { DatabaseService } from '../../src/shared/database/database.module';
-import { FirebaseService } from '../../src/shared/firebase/firebase.module';
-import { RedisService } from '../../src/shared/redis/redis.module';
-import { RedisIoAdapter } from '../../src/shared/redis/redis-io.adapter';
+import { AppConfig, CONFIG } from '@/config/configuration';
+import { DatabaseService } from '@/shared/database/database.module';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
+import { RedisService } from '@/shared/redis/redis.module';
+import { RedisIoAdapter } from '@/shared/redis/redis-io.adapter';
 import { PresenceService } from '../../src/modules/presence/service/presence.service';
 import { Ack } from '../../src/modules/realtime/dto/events.dto';
 import { HistorySyncClient } from '../fixtures/history-sync-client';
@@ -110,7 +110,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
       code,
     });
     const session = await request(app!.getHttpServer())
-      .post('/auth/session')
+      .post('/api/v1/auth/session')
       .set('Authorization', `Bearer ${verified.idToken}`)
       .send({})
       .expect(201);
@@ -169,17 +169,17 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
   });
   it('maps repeated authentication to one PostgreSQL user and persists profiles', async () => {
     const me = await request(app!.getHttpServer())
-      .get('/auth/me')
+      .get('/api/v1/auth/me')
       .set('Authorization', auth(alice))
       .expect(200);
     expect(me.body.id).toBe(alice.id);
     await request(app!.getHttpServer())
-      .patch('/auth/profile')
+      .patch('/api/v1/auth/profile')
       .set('Authorization', auth(alice))
       .send({ displayName: 'Alice' })
       .expect(200);
     const again = await request(app!.getHttpServer())
-      .get('/auth/me')
+      .get('/api/v1/auth/me')
       .set('Authorization', auth(alice))
       .expect(200);
     expect(again.body.displayName).toBe('Alice');
@@ -188,7 +188,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     const responses = await Promise.all(
       Array.from({ length: 12 }, (_, i) =>
         request(app!.getHttpServer())
-          .post('/chat/create')
+          .post('/api/v1/chat/create')
           .set('Authorization', auth(alice))
           .send({
             userAId: i % 2 ? alice.id : bob.id,
@@ -227,22 +227,22 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
   });
   it('supports several 1:1 chats per user and rejects self/missing participants/BOLA', async () => {
     await request(app!.getHttpServer())
-      .post('/chat/create')
+      .post('/api/v1/chat/create')
       .set('Authorization', auth(alice))
       .send({ userAId: alice.id, userBId: outsider.id })
       .expect(201);
     const list = await request(app!.getHttpServer())
-      .get(`/user/${alice.id}/chats`)
+      .get(`/api/v1/user/${alice.id}/chats`)
       .set('Authorization', auth(alice))
       .expect(200);
     expect(list.body.items).toHaveLength(2);
     await request(app!.getHttpServer())
-      .post('/chat/create')
+      .post('/api/v1/chat/create')
       .set('Authorization', auth(alice))
       .send({ userAId: alice.id, userBId: alice.id })
       .expect(400);
     await request(app!.getHttpServer())
-      .post('/chat/create')
+      .post('/api/v1/chat/create')
       .set('Authorization', auth(alice))
       .send({
         userAId: alice.id,
@@ -250,11 +250,11 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
       })
       .expect(404);
     await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages`)
+      .get(`/api/v1/chat/${chatId}/messages`)
       .set('Authorization', auth(outsider))
       .expect(403);
     await request(app!.getHttpServer())
-      .get(`/user/${bob.id}/chats`)
+      .get(`/api/v1/user/${bob.id}/chats`)
       .set('Authorization', auth(alice))
       .expect(403);
   });
@@ -262,7 +262,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     const sends = await Promise.all(
       Array.from({ length: 5 }, () =>
         request(app!.getHttpServer())
-          .post(`/chat/${chatId}/message/send`)
+          .post(`/api/v1/chat/${chatId}/message/send`)
           .set('Authorization', auth(alice))
           .send({
             senderId: alice.id,
@@ -280,43 +280,43 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
       .get();
     expect(snapshot.get('text')).toBe('Persisted');
     const later = await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/send`)
+      .post(`/api/v1/chat/${chatId}/message/send`)
       .set('Authorization', auth(bob))
       .send({ senderId: bob.id, text: 'Later' })
       .expect(201);
     const page = await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages?limit=1`)
+      .get(`/api/v1/chat/${chatId}/messages?limit=1`)
       .set('Authorization', auth(bob))
       .expect(200);
     const page2 = await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages`)
+      .get(`/api/v1/chat/${chatId}/messages`)
       .query({ limit: 1, cursor: page.body.nextCursor })
       .set('Authorization', auth(bob))
       .expect(200);
     expect(page2.body.items[0].id).toBe(later.body.id);
     const receipt = await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/${firstId}/read`)
+      .post(`/api/v1/chat/${chatId}/message/${firstId}/read`)
       .set('Authorization', auth(bob))
       .send({ userId: bob.id })
       .expect(201);
     const retry = await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/${firstId}/read`)
+      .post(`/api/v1/chat/${chatId}/message/${firstId}/read`)
       .set('Authorization', auth(bob))
       .send({ userId: bob.id })
       .expect(201);
     expect(retry.body.readAt).toBe(receipt.body.readAt);
     await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/lastseen`)
+      .post(`/api/v1/chat/${chatId}/lastseen`)
       .set('Authorization', auth(bob))
       .send({ userId: bob.id, messageId: later.body.id })
       .expect(201);
     await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/lastseen`)
+      .post(`/api/v1/chat/${chatId}/lastseen`)
       .set('Authorization', auth(bob))
       .send({ userId: bob.id, messageId: firstId })
       .expect(409);
     await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/missing/read`)
+      .post(`/api/v1/chat/${chatId}/message/missing/read`)
       .set('Authorization', auth(bob))
       .send({ userId: bob.id })
       .expect(404);
@@ -351,7 +351,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     expect(duplicate.ok && duplicate.data.id).toBe(message.id);
     b.disconnect();
     const history = await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages`)
+      .get(`/api/v1/chat/${chatId}/messages`)
       .set('Authorization', auth(bob))
       .expect(200);
     expect(
@@ -360,11 +360,11 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
   });
   it('round-trips maximum-length message pagination in the real Firestore emulator', async () => {
     const created = await request(app!.getHttpServer())
-      .post('/chat/create')
+      .post('/api/v1/chat/create')
       .set('Authorization', auth(bob))
       .send({ userAId: bob.id, userBId: outsider.id })
       .expect(201);
-    const path = `/chat/${created.body.chatId}`;
+    const path = `/api/v1/chat/${created.body.chatId}`;
     const first = await request(app!.getHttpServer())
       .post(`${path}/message/send`)
       .set('Authorization', auth(bob))
@@ -394,21 +394,21 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
       .expect(200);
     expect(next.body.items[0].id).toBe(later.body.id);
     await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages`)
+      .get(`/api/v1/chat/${chatId}/messages`)
       .query({ cursor: page.body.nextCursor })
       .set('Authorization', auth(bob))
       .expect(400);
   });
   it('recovers lost A after later live B using only committed history checkpoints', async () => {
     const initial = await request(app!.getHttpServer())
-      .get(`/chat/${chatId}/messages`)
+      .get(`/api/v1/chat/${chatId}/messages`)
       .set('Authorization', auth(bob))
       .expect(200);
     const client = new HistorySyncClient<PersistedMessage>(
       initial.body.syncCursor,
     );
     const a = await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/send`)
+      .post(`/api/v1/chat/${chatId}/message/send`)
       .set('Authorization', auth(alice))
       .send({ senderId: alice.id, text: 'lost-A' })
       .expect(201);
@@ -418,7 +418,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
       bSocket.once('message:new', resolve),
     );
     const b = await request(app!.getHttpServer())
-      .post(`/chat/${chatId}/message/send`)
+      .post(`/api/v1/chat/${chatId}/message/send`)
       .set('Authorization', auth(alice))
       .send({ senderId: alice.id, text: 'later-live-B' })
       .expect(201);
@@ -427,7 +427,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     await client.synchronize(
       async (cursor) => {
         const response = await request(app!.getHttpServer())
-          .get(`/chat/${chatId}/messages`)
+          .get(`/api/v1/chat/${chatId}/messages`)
           .query({ limit: 1, cursor })
           .set('Authorization', auth(bob))
           .expect(200);
@@ -500,7 +500,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     const uid = (await firebase.auth.verifyIdToken(outsider.token)).uid;
     await firebase.auth.updateUser(uid, { disabled: true });
     await request(app!.getHttpServer())
-      .get('/auth/me')
+      .get('/api/v1/auth/me')
       .set('Authorization', auth(outsider))
       .expect(401);
     await request(app!.getHttpServer()).get('/health/ready').expect(200);
@@ -544,12 +544,12 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     expect(res.ok).toBe(true);
     const identity = (await res.json()) as { idToken: string; localId: string };
     const first = await request(app!.getHttpServer())
-      .post('/auth/session')
+      .post('/api/v1/auth/session')
       .set('Authorization', `Bearer ${identity.idToken}`)
       .send({})
       .expect(201);
     const again = await request(app!.getHttpServer())
-      .post('/auth/session')
+      .post('/api/v1/auth/session')
       .set('Authorization', `Bearer ${identity.idToken}`)
       .send({})
       .expect(201);
@@ -557,7 +557,7 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     await pause(1100); // Firebase revocation compares auth_time at second precision.
     await app!.get(FirebaseService).auth.revokeRefreshTokens(identity.localId);
     await request(app!.getHttpServer())
-      .get('/auth/me')
+      .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${identity.idToken}`)
       .expect(401);
   });

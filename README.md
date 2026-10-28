@@ -116,29 +116,38 @@ npm run build
 npm start
 ```
 
-For development, run `npm run build:watch` and `npm run start:dev` in separate terminals. To stop the foreground server, press Ctrl+C.
+For development, use one terminal:
+
+```sh
+npm run dev
+```
+
+The watcher compiles TypeScript, resolves the shared path aliases, and restarts the server after each successful compilation. `npm run start:dev` is an alias for the same workflow. Use `npm run build:watch` only when you need compilation without starting a server. Press Ctrl+C to stop the watcher and server.
 
 ## Addresses and authentication
 
-| Address                 | Purpose                                      |
-| ----------------------- | -------------------------------------------- |
-| `http://localhost:3000` | API base; no frontend is served at `/`       |
-| `/docs`                 | Development Swagger UI when enabled          |
-| `/health/live`          | Process liveness                             |
-| `/health/ready`         | PostgreSQL, Redis and Firestore connectivity |
+Business routes use `/api/v1`. Configure `API_PREFIX=api` and `API_VERSION=1` in either local profile; Compose forwards both values. Changing these values changes the URI contract. Swagger is at `/api/v1/docs`, while `/health/live` and `/health/ready` stay unversioned. Legacy unprefixed business routes are not aliases.
+
+| Address                        | Purpose                                      |
+| ------------------------------ | -------------------------------------------- |
+| `http://localhost:3000`        | API base; no frontend is served at `/`       |
+| `http://localhost:3000/api/v1` | Versioned REST base                          |
+| `/api/v1/docs`                 | Development Swagger UI when enabled          |
+| `/health/live`                 | Process liveness                             |
+| `/health/ready`                | PostgreSQL, Redis and Firestore connectivity |
 
 Use `APP_PORT` for Docker or `PORT` for native execution when changed from 3000. Firebase Auth verification is exercised by authenticated traffic, not readiness.
 
-Clients sign in using Firebase, obtain an ID token and send `Authorization: Bearer <idToken>`. Socket.IO uses `auth.token`. `POST /auth/session` or `GET /auth/me` returns the internal user UUID. Only Phone and Google sessions are accepted; expiry and revocation are checked. [Security model](docs/security/security-design.md).
+Clients sign in using Firebase, obtain an ID token and send `Authorization: Bearer <idToken>`. Socket.IO uses `auth.token`. `POST /api/v1/auth/session` or `GET /api/v1/auth/me` returns the internal user UUID. Only Phone and Google sessions are accepted; expiry and revocation are checked. [Security model](docs/security/security-design.md).
 
-| Method | Path                                    | Behavior                                       |
-| ------ | --------------------------------------- | ---------------------------------------------- |
-| POST   | `/chat/create`                          | Create/retrieve a direct pair                  |
-| POST   | `/chat/:chatId/message/send`            | Persist a message and attempt live publication |
-| GET    | `/chat/:chatId/messages`                | Read timestamp/ID-ordered history              |
-| POST   | `/chat/:chatId/message/:messageId/read` | Mark an incoming message read                  |
-| POST   | `/chat/:chatId/lastseen`                | Advance the caller's message pointer           |
-| GET    | `/user/:userId/chats`                   | List the caller's chats                        |
+| Method | Path                                           | Behavior                                       |
+| ------ | ---------------------------------------------- | ---------------------------------------------- |
+| POST   | `/api/v1/chat/create`                          | Create/retrieve a direct pair                  |
+| POST   | `/api/v1/chat/:chatId/message/send`            | Persist a message and attempt live publication |
+| GET    | `/api/v1/chat/:chatId/messages`                | Read timestamp/ID-ordered history              |
+| POST   | `/api/v1/chat/:chatId/message/:messageId/read` | Mark an incoming message read                  |
+| POST   | `/api/v1/chat/:chatId/lastseen`                | Advance the caller's message pointer           |
+| GET    | `/api/v1/user/:userId/chats`                   | List the caller's chats                        |
 
 [REST contracts](docs/api/rest-api.md), [Socket.IO events](docs/api/socket-events.md), [reconnection and limits](docs/architecture/realtime-flow.md). Clients deduplicate by ID, retry ambiguous sends with clientRequestId, and advance history checkpoints only after committed fetched pages. SENT means persisted; READ requires an explicit receipt. Live publication is best effort.
 
@@ -149,10 +158,15 @@ npm run lint
 npm run typecheck
 npm run build
 npm test
+npm run test:redis
 npm run security:scan
 npm audit --omit=dev
 ```
 
 These host-side checks need Node/npm. Unit/transport tests use labeled doubles; separate integration tests require disposable stores and Firebase emulators, not the live profile. [Test setup](docs/testing/test-strategy.md), [verification evidence](docs/security/final-audit.md).
+
+`test:redis` is an independent real loopback-Redis check that uses unique temporary counters and deletes them afterward; it does not need Firebase emulators. HTTP admission is Redis-backed: IP quota runs before JSON parsing, then token-digest admission before verification and a verified-user quota afterward. The default is 120 per 60-second window for each policy. Responses expose `RateLimit-*`; HTTP 429 adds `Retry-After` in seconds. Only cheap liveness and CORS preflight bypass that admission. Readiness, Swagger and unknown routes are limited.
+
+Helmet supplies CSP, anti-framing, no-sniff and referrer protections; API responses disable caching and the Express identification header. HSTS and HTTPS-upgrade CSP apply only in production, preserving localhost HTTP development. CORS rejects origins outside the exact allowlist, and untrusted forwarded IP headers cannot change the quota key. [Security behavior](docs/security/security-design.md).
 
 For deployment, use production mode, HTTPS origins, authenticated/private database and Redis connections, least-privilege SQL/IAM roles and externally managed credentials. The migration image includes tooling; the runtime image excludes development dependencies. Verify deployed Firestore rules/indexes, TLS/WSS, backups/restore, resource limits, real provider login, load behavior, signals, monitoring and rollback. [Failure handling](docs/architecture/consistency.md), [storage model](docs/architecture/data-model.md).

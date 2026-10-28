@@ -1,7 +1,7 @@
 import { UsersRepository } from '../../src/modules/users/repository/users.repository';
 import { Prisma } from '@prisma/client';
 import { UsersService } from '../../src/modules/users/service/users.service';
-import { DatabaseService } from '../../src/shared/database/database.module';
+import { DatabaseService } from '@/shared/database/database.module';
 
 describe('Verified user mapping', () => {
   const db = {

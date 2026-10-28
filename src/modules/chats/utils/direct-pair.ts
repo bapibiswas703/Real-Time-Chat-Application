@@ -1,4 +1,4 @@
-import { AppError } from '../../../common/errors';
+import { AppError } from '@/common/errors';
 export function directPairKey(userAId: string, userBId: string): string {
   const ids = [userAId.toLowerCase(), userBId.toLowerCase()];
   if (ids[0] === ids[1])

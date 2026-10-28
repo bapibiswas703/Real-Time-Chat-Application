@@ -1,5 +1,5 @@
 import { IsString, IsUUID, Length, Matches, IsOptional } from 'class-validator';
-import { normalizeUuid } from '../../../common/dto/common.dto';
+import { normalizeUuid } from '@/common/dto/common.dto';
 export class ChatEventDto {
   @normalizeUuid @IsUUID() chatId!: string;
 }

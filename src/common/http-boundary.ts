@@ -1,48 +1,16 @@
 import {
   ArgumentsHost,
-  CanActivate,
   Catch,
   ExceptionFilter,
-  ExecutionContext,
   HttpException,
-  Inject,
-  Injectable,
   Logger,
 } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
 import { Response } from 'express';
-import { randomUUID, createHash } from 'node:crypto';
-import { AppConfig, CONFIG } from '../config/configuration';
-import { Metrics } from '../shared/observability/observability.module';
-import { RedisService } from '../shared/redis/redis.module';
-import { AppError, errorStatus } from './errors';
-import { AuthRequest } from './http-auth';
+import { randomUUID } from 'node:crypto';
+import { Metrics } from '@/shared/observability/observability.module';
+import { AppError, errorStatus } from '@/common/errors';
+import { AuthRequest } from '@/common/http-auth';
 
-@Injectable()
-export class RateLimitGuard implements CanActivate {
-  constructor(
-    private readonly redis: RedisService,
-    private readonly reflector: Reflector,
-    @Inject(CONFIG) private readonly config: AppConfig,
-  ) {}
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (context.getType() !== 'http') return true;
-    if (
-      this.reflector.getAllAndOverride<boolean>('public', [
-        context.getHandler(),
-        context.getClass(),
-      ])
-    )
-      return true;
-    const request = context.switchToHttp().getRequest<AuthRequest>();
-    const key = createHash('sha256')
-      .update(request.ip ?? 'unknown')
-      .digest('hex');
-    if (!(await this.redis.rateLimit(`http:${key}`, this.config.httpRateLimit)))
-      throw new AppError('RATE_LIMITED', 'Request rate limit exceeded');
-    return true;
-  }
-}
 export function safeError(error: unknown) {
   if (error instanceof AppError)
     return {

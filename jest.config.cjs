@@ -1,5 +1,10 @@
 module.exports = {
   testEnvironment: 'node',
+  moduleNameMapper: {
+    '^@/common/(.*)$': '<rootDir>/src/common/$1',
+    '^@/config/(.*)$': '<rootDir>/src/config/$1',
+    '^@/shared/(.*)$': '<rootDir>/src/shared/$1',
+  },
   extensionsToTreatAsEsm: ['.ts'],
   transform: {
     '^.+\\.tsx?$': [

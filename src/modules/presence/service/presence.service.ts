@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AppConfig, CONFIG } from '../../../config/configuration';
-import { AppError } from '../../../common/errors';
-import { RedisService } from '../../../shared/redis/redis.module';
+import { AppConfig, CONFIG } from '@/config/configuration';
+import { AppError } from '@/common/errors';
+import { RedisService } from '@/shared/redis/redis.module';
 
 const LEASE = `
 local t = redis.call('TIME'); local now = t[1]*1000 + math.floor(t[2]/1000)

@@ -26,6 +26,8 @@ src/
 
 Folders exist only where needed. Auth and presence do not need database repositories; realtime uses gateways rather than HTTP controllers. Shared providers initialize SDKs and connections. Small pure validation/order helpers live in utils.
 
+Shared-root imports use `@/common/*`, `@/config/*` and `@/shared/*` in source and TypeScript tests. TypeScript paths and Jest mappings resolve these aliases during checking/tests. `npm run build` rewrites them to relative paths with tsc-alias after compilation, so `node dist/main.js` and the Docker runtime need no alias loader. Paths are relative to the tsconfig file; no deprecated baseUrl setting is required. Module-local imports stay relative.
+
 Controllers validate DTOs and delegate to services. Services enforce caller ownership, membership and workflow rules. Repositories contain module-owned SQL/Firestore access, including transaction and uniqueness handling. Repository providers are private; modules export services only. There is no shared generic repository or cross-module repository injection.
 
 | Module       | Responsibility                                                   | Public service      |

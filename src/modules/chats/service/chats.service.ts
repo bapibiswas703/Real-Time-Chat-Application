@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ChatsRepository } from '../repository/chats.repository';
-import { AppError, assertIdentity } from '../../../common/errors';
+import { AppError, assertIdentity } from '@/common/errors';
 import { UsersService } from '../../users/service/users.service';
 import { directPairKey } from '../utils/direct-pair';
 

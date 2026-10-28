@@ -8,8 +8,8 @@ import { ChatsService } from '../../src/modules/chats/service/chats.service';
 import {
   LiveEvents,
   Metrics,
-} from '../../src/shared/observability/observability.module';
-import { AppError } from '../../src/common/errors';
+} from '@/shared/observability/observability.module';
+import { AppError } from '@/common/errors';
 import {
   compareOrder,
   decodeCursor,

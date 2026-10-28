@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { User } from '@prisma/client';
-import { Actor } from '../../../common/http-auth';
+import { Actor } from '@/common/http-auth';
 import { UsersService } from '../../users/service/users.service';
 import { ProfileDto } from '../dto/profile.dto';
 

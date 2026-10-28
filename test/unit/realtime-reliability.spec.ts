@@ -6,12 +6,12 @@ import { ChatsService } from '../../src/modules/chats/service/chats.service';
 import { MessagesService } from '../../src/modules/messages/service/messages.service';
 import { ReadReceiptsService } from '../../src/modules/read-receipts/service/read-receipts.service';
 import { PresenceService } from '../../src/modules/presence/service/presence.service';
-import { RedisService } from '../../src/shared/redis/redis.module';
+import { RedisService } from '@/shared/redis/redis.module';
 import {
   LiveEvents,
   Metrics,
-} from '../../src/shared/observability/observability.module';
-import { AppConfig } from '../../src/config/configuration';
+} from '@/shared/observability/observability.module';
+import { AppConfig } from '@/config/configuration';
 
 const chatId = '00000000-0000-4000-8000-000000000014';
 const flush = async () => {

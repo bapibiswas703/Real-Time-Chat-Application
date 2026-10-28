@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsUUID, Matches } from 'class-validator';
-import { normalizeUuid } from '../../../common/dto/common.dto';
+import { normalizeUuid } from '@/common/dto/common.dto';
 
 export class ReadDto {
   @ApiProperty({ format: 'uuid' }) @normalizeUuid @IsUUID() userId!: string;

@@ -6,6 +6,8 @@ services:
     environment:
       NODE_ENV: development
       PORT: '3000'
+      API_PREFIX: ${API_PREFIX:-api}
+      API_VERSION: ${API_VERSION:-1}
       DATABASE_URL: postgresql://${POSTGRES_USER:-chat}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chat}
       REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}

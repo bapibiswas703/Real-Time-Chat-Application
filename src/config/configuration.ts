@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 export interface AppConfig {
   nodeEnv: string;
   port: number;
+  apiPrefix: string;
+  apiVersion: string;
   databaseUrl: string;
   redisUrl: string;
   projectId: string;
@@ -53,6 +55,9 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
   )
     throw new Error('CORS_ORIGINS must contain exact origins');
   const projectId = required('FIREBASE_PROJECT_ID');
+  const apiPrefix = env.API_PREFIX ?? 'api';
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(apiPrefix))
+    throw new Error('API_PREFIX must be one lowercase path segment');
   if (nodeEnv === 'production') {
     if (env.FIREBASE_AUTH_EMULATOR_HOST || env.FIRESTORE_EMULATOR_HOST)
       throw new Error('Emulators forbidden in production');
@@ -74,6 +79,8 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     projectId,
     corsOrigins,
     port: integer('PORT', 3000, 65535),
+    apiPrefix,
+    apiVersion: String(integer('API_VERSION', 1, 999)),
     httpRateLimit: integer('HTTP_RATE_LIMIT', 120),
     socketRateLimit: integer('SOCKET_RATE_LIMIT', 120),
     typingRateLimit: integer('TYPING_RATE_LIMIT', 10),

@@ -7,8 +7,8 @@ import {
   Timestamp,
   Transaction,
 } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../../shared/firebase/firebase.module';
-import { AppError } from '../../../common/errors';
+import { FirebaseService } from '@/shared/firebase/firebase.module';
+import { AppError } from '@/common/errors';
 import { decodeCursor, encodeCursor, PersistedMessage } from '../utils/message';
 
 @Injectable()
