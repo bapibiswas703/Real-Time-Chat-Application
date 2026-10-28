@@ -1,0 +1,53 @@
+name: backend-ci
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: chat
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: chat_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U chat -d chat_test" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7.4
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://chat:ci_only_password@127.0.0.1:5432/chat_test
+      REDIS_URL: redis://127.0.0.1:6379
+      FIREBASE_PROJECT_ID: demo-chat
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+      METADATA_SERVER_DETECTION: none
+      CORS_ORIGINS: http://localhost:5173
+      HTTP_RATE_LIMIT: 2000
+      SOCKET_RATE_LIMIT: 2000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm run security:scan
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm audit --omit=dev
+      - run: npm audit --audit-level=moderate
+      - run: npm test -- --coverage
+      - run: npm run build
+      - run: npm run test:emulators
+      - run: npx firebase emulators:exec --only auth,firestore --project demo-chat "npm run test:smoke"

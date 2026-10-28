@@ -1,0 +1,6 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "messages", "fieldPath": "text", "indexes": [] }
+  ]
+}

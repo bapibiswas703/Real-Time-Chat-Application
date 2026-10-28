@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.env*
+!.env.example
+coverage
+.local
+test-results
+*-service-account*.json
+*credentials*.json
+*firebase-adminsdk*.json
+*firebase_adminsdk*.json
+**/*firebase-adminsdk*.json
+**/*firebase_adminsdk*.json
+firebase-adminsdk.json

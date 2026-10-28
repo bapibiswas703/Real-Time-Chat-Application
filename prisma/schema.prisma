@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ChatType {
+  DIRECT
+}
+
+model User {
+  id          String   @id @default(uuid()) @db.Uuid
+  firebaseUid String   @unique @map("firebase_uid") @db.VarChar(128)
+  displayName String   @map("display_name") @db.VarChar(80)
+  phoneNumber String?  @map("phone_number") @db.VarChar(32)
+  email       String?  @db.VarChar(320)
+  avatarUrl   String?  @map("avatar_url") @db.VarChar(2048)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  participants ChatParticipant[]
+  @@map("users")
+}
+
+model Chat {
+  id                     String   @id @default(uuid()) @db.Uuid
+  type                   ChatType @default(DIRECT)
+  canonicalDirectPairKey String   @unique @map("canonical_direct_pair_key") @db.VarChar(73)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  participants           ChatParticipant[]
+  @@map("chats")
+}
+
+model ChatParticipant {
+  chatId   String   @map("chat_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@id([chatId, userId])
+  @@index([userId, chatId])
+  @@map("chat_participants")
+}
