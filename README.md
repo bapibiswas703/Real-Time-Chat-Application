@@ -1,20 +1,114 @@
 # Real-Time Chat Backend
 
-A NestJS modular monolith for authenticated 1:1 messaging. PostgreSQL stores users, chats and immutable membership. Firestore stores messages, read receipts and last-seen-message state. Firebase Authentication handles Phone OTP and Google Sign-In. Redis coordinates presence, typing, rate limits and Socket.IO instances.
+A NestJS modular monolith for authenticated 1:1 messaging. PostgreSQL stores users, chats and immutable membership. Firestore stores messages, receipts and last-seen-message state. Firebase Authentication handles Phone OTP and Google Sign-In. Redis coordinates presence, typing, rate limits and Socket.IO instances.
 
-Modules use `controller/`, `service/`, `repository/`, `dto/`, `utils/` and `gateway/` folders where needed. Shared connections live in `src/shared/`; repositories stay private to their modules. [Architecture and source layout](docs/architecture/modular-monolith.md).
+Run the complete application with **Docker Compose**, or run it directly with **Node.js and native PostgreSQL/Redis**. Both workflows use live Firebase. Modules use controller, service, repository, dto, utils and gateway folders; shared connections live in `src/shared/`. [Architecture](docs/architecture/modular-monolith.md).
 
-## Run locally
+## Firebase file for either workflow
 
-Use Node **22.22.1+**, npm, PostgreSQL and Redis. The default setup uses native local services and live Firebase; Docker is optional.
+Place the separately supplied private Admin SDK JSON in the repository root as `firebase-adminsdk.json`. Keep this file and actual env files local; Git and Docker exclude them. `firebase.json` is Firebase CLI configuration and is a different file.
 
-1. Run commands from the project root. Install dependencies with `npm ci`.
-2. For a new setup, copy `.env.example` to `.env`. Preserve an existing `.env`.
-3. Place the private Firebase Admin SDK JSON at `./firebase-adminsdk.json`. This file is excluded from Git and Docker. `firebase.json` is separate Firebase CLI configuration and contains no server credentials.
-4. Configure the database password and Firebase project in `.env`. Create the local `chat` PostgreSQL database if needed.
-5. Generate Prisma Client, apply migrations, verify Firebase and start the application:
+The configured Firebase project is `real-time-chat-applicati-a640f`, with the `(default)` Firestore database in Mumbai (`asia-south1`). Phone and Google providers must be enabled for client sign-in. Leave Firebase emulator variables unset for both workflows below. [Firebase configuration](docs/configuration/firebase-project.md).
+
+## Run with Docker Compose
+
+### 1. Prepare configuration
+
+Install Docker Engine/Desktop with Compose v2 and start the Docker engine. No host Node.js, PostgreSQL or Redis installation is needed for this workflow.
+
+From the repository root, create a separate local Docker profile:
 
 ```sh
+cp .env.example .env.docker
+```
+
+PowerShell: `Copy-Item .env.example .env.docker`. Preserve an existing env file. Edit these values in `.env.docker`:
+
+```dotenv
+APP_PORT=3000
+POSTGRES_USER=chat
+POSTGRES_DB=chat
+POSTGRES_PASSWORD=ChooseALocalPostgresPassword
+REDIS_PASSWORD=ChooseALocalRedisPassword
+FIREBASE_PROJECT_ID=real-time-chat-applicati-a640f
+FIREBASE_CREDENTIALS_FILE=./firebase-adminsdk.json
+CORS_ORIGINS=http://localhost:5173
+SWAGGER_ENABLED=true
+```
+
+Use alphanumeric local passwords in this Compose profile: its internal connection URLs interpolate those values directly. The native `DATABASE_URL`, `REDIS_URL` and `GOOGLE_APPLICATION_CREDENTIALS` values in the copied example are overridden by Compose. The container uses service hosts `postgres`/`redis` and mounts the Firebase file read-only at `/run/secrets/firebase-adminsdk.json`.
+
+If a native server already occupies port 3000, stop it or set `APP_PORT=3001`. PostgreSQL and Redis stay on the private Compose network, so existing native ports 5432 and 6379 can remain running.
+
+### 2. Build and start
+
+```sh
+docker compose --env-file .env.docker config --quiet
+docker compose --env-file .env.docker up --build --wait
+```
+
+Compose starts four services:
+
+| Service    | Purpose                                                      |
+| ---------- | ------------------------------------------------------------ |
+| `postgres` | PostgreSQL 17 with a persistent named volume                 |
+| `redis`    | Password-protected Redis 7.4 for transient coordination      |
+| `migrate`  | One-shot Prisma migration using the build's CLI/dependencies |
+| `app`      | Compiled Node 22 API, running as the non-root node user      |
+
+The API waits for healthy PostgreSQL/Redis and successful migrations. `migrate` exiting with code 0 is expected. The Firebase key is mounted only into the API; it is not copied into either image. Local Compose sets `NODE_ENV=development` so localhost CORS and Swagger work; production validation remains enabled when running with `NODE_ENV=production`.
+
+### 3. Verify and inspect
+
+```sh
+docker compose --env-file .env.docker ps -a
+docker compose --env-file .env.docker logs --tail=100 app migrate
+curl http://localhost:3000/health/live
+curl http://localhost:3000/health/ready
+```
+
+Use the chosen `APP_PORT` in URLs. In PowerShell, `Invoke-RestMethod http://localhost:3000/health/ready` is also available. Liveness reports process health; readiness additionally checks PostgreSQL, Redis and a Firestore read. Check Firebase credentials/project/IAM if readiness fails.
+
+### 4. Stop or restart
+
+```sh
+docker compose --env-file .env.docker down
+docker compose --env-file .env.docker up --build --wait
+```
+
+`down` preserves the PostgreSQL volume and its data. Keep the same database credentials when reusing that volume; changing the env password does not change an already initialized database user's password. Redis presence/typing state is transient. Do not remove database volumes unless intentionally discarding their data.
+
+## Run directly with Node.js
+
+### 1. Prepare local services
+
+Install Node **22.22.1+**, npm, PostgreSQL and Redis. Start the native services and create a PostgreSQL database named `chat`. The example uses PostgreSQL user `postgres` and loopback Redis without authentication; adjust these to match your machine.
+
+```sh
+cp .env.example .env
+```
+
+PowerShell: `Copy-Item .env.example .env` for a new setup. Preserve an existing `.env`. Configure:
+
+```dotenv
+NODE_ENV=development
+PORT=3000
+DATABASE_URL=postgresql://postgres:YOUR_URL_ENCODED_PASSWORD@127.0.0.1:5432/chat
+REDIS_URL=redis://127.0.0.1:6379
+FIREBASE_PROJECT_ID=real-time-chat-applicati-a640f
+GOOGLE_APPLICATION_CREDENTIALS=./firebase-adminsdk.json
+CORS_ORIGINS=http://localhost:5173
+SWAGGER_ENABLED=true
+```
+
+Replace the password placeholder and URL-encode special characters. Docker-specific `APP_PORT`, `POSTGRES_*`, `REDIS_PASSWORD` and `FIREBASE_CREDENTIALS_FILE` variables do not configure the native process; it uses the explicit connection URLs and credential path above.
+
+### 2. Install, migrate and start
+
+Run from the repository root:
+
+```sh
+npm ci
 npm run prisma:generate
 npm run db:migrate
 npm run firebase:check
@@ -22,61 +116,43 @@ npm run build
 npm start
 ```
 
-PowerShell setup: `Copy-Item .env.example .env` when no `.env` exists. The configured development defaults are PostgreSQL at `127.0.0.1:5432`, database `chat`, user `postgres`, and Redis at `127.0.0.1:6379`. URL-encode special characters in the PostgreSQL password. The example contains placeholders, never the local password or private key.
+For development, run `npm run build:watch` and `npm run start:dev` in separate terminals. To stop the foreground server, press Ctrl+C.
 
-The Firebase credential path is:
+## Addresses and authentication
 
-```dotenv
-FIREBASE_PROJECT_ID=real-time-chat-applicati-a640f
-GOOGLE_APPLICATION_CREDENTIALS=./firebase-adminsdk.json
-```
+| Address                 | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `http://localhost:3000` | API base; no frontend is served at `/`       |
+| `/docs`                 | Development Swagger UI when enabled          |
+| `/health/live`          | Process liveness                             |
+| `/health/ready`         | PostgreSQL, Redis and Firestore connectivity |
 
-Leave `FIREBASE_AUTH_EMULATOR_HOST` and `FIRESTORE_EMULATOR_HOST` unset for this profile. [Firebase setup and troubleshooting](docs/configuration/firebase-project.md).
+Use `APP_PORT` for Docker or `PORT` for native execution when changed from 3000. Firebase Auth verification is exercised by authenticated traffic, not readiness.
 
-| Address                 | Purpose                                           |
-| ----------------------- | ------------------------------------------------- |
-| `http://localhost:3000` | API base URL; the root path has no frontend page  |
-| `/docs`                 | Development Swagger UI when enabled               |
-| `/health/live`          | Process liveness                                  |
-| `/health/ready`         | PostgreSQL, Redis and Firestore read connectivity |
-
-For development, run `npm run build:watch` and `npm run start:dev` in separate terminals. Firebase Auth verification is exercised by authenticated traffic, not readiness.
-
-## Authentication and chat APIs
-
-Clients sign in with the Firebase client SDK, obtain an ID token and send `Authorization: Bearer <idToken>`. Socket.IO uses `auth.token`. Call `POST /auth/session` or `GET /auth/me` to obtain the internal user UUID. Only Phone and Google sessions are accepted; the backend verifies signatures, expiry and revocation. [Security policy](docs/security/security-design.md).
+Clients sign in using Firebase, obtain an ID token and send `Authorization: Bearer <idToken>`. Socket.IO uses `auth.token`. `POST /auth/session` or `GET /auth/me` returns the internal user UUID. Only Phone and Google sessions are accepted; expiry and revocation are checked. [Security model](docs/security/security-design.md).
 
 | Method | Path                                    | Behavior                                       |
 | ------ | --------------------------------------- | ---------------------------------------------- |
-| POST   | `/chat/create`                          | Create/retrieve an unordered direct pair       |
+| POST   | `/chat/create`                          | Create/retrieve a direct pair                  |
 | POST   | `/chat/:chatId/message/send`            | Persist a message and attempt live publication |
-| GET    | `/chat/:chatId/messages`                | Read ascending timestamp/ID history            |
-| POST   | `/chat/:chatId/message/:messageId/read` | Mark an incoming message read idempotently     |
+| GET    | `/chat/:chatId/messages`                | Read timestamp/ID-ordered history              |
+| POST   | `/chat/:chatId/message/:messageId/read` | Mark an incoming message read                  |
 | POST   | `/chat/:chatId/lastseen`                | Advance the caller's message pointer           |
 | GET    | `/user/:userId/chats`                   | List the caller's chats                        |
 
-Profile updates, own read state and receipt queries are also available. [REST contracts](docs/api/rest-api.md), [Socket.IO events](docs/api/socket-events.md).
+[REST contracts](docs/api/rest-api.md), [Socket.IO events](docs/api/socket-events.md), [reconnection and limits](docs/architecture/realtime-flow.md). Clients deduplicate by ID, retry ambiguous sends with clientRequestId, and advance history checkpoints only after committed fetched pages. SENT means persisted; READ requires an explicit receipt. Live publication is best effort.
 
-Clients deduplicate by stable message ID and use `clientRequestId` for ambiguous-send retries. On reconnect, join first, buffer live packets and traverse history from the last committed `syncCursor`. Live packets never advance that checkpoint. SENT means persisted; READ requires an explicit receipt. Live publication is best effort. [Recovery and limits](docs/architecture/realtime-flow.md).
-
-## Verification
+## Verification and deployment
 
 ```sh
 npm run lint
 npm run typecheck
 npm run build
-npm run test:coverage
+npm test
 npm run security:scan
 npm audit --omit=dev
-npm run firebase:check
 ```
 
-The ordinary suite uses real HTTP/Socket transports with labeled identity/storage doubles. The separate infrastructure suite requires a disposable `chat_test` database, Redis and `demo-chat` Firebase emulators. It must never target the live profile. Java 21+ is needed only for those emulator checks. [Test setup and current evidence](docs/testing/test-strategy.md), [verification report](docs/security/final-audit.md).
+These host-side checks need Node/npm. Unit/transport tests use labeled doubles; separate integration tests require disposable stores and Firebase emulators, not the live profile. [Test setup](docs/testing/test-strategy.md), [verification evidence](docs/security/final-audit.md).
 
-## Deployment
-
-Docker Compose is an optional local PostgreSQL/Redis setup. Its `chat` database user and authenticated Redis URLs must match the Compose password variables; avoid conflicting native-service ports. See [configuration](docs/configuration/firebase-project.md).
-
-For deployment, set `NODE_ENV=production`, real Firebase project, exact HTTPS origins and authenticated PostgreSQL/Redis URLs. Inject credentials externally or use workload identity; mount a secret and set its runtime path rather than copying the local JSON into an image. The Docker image declares a non-root user. Use separate migration credentials and deploy Firestore rules/indexes through authorized release tooling.
-
-Verify TLS/WSS, least-privilege IAM/SQL roles, Redis isolation, backups/restore, resource limits, real provider sign-in, load behavior, alerts and rollback. Current process capacity is 128 pending/active sockets with bounded renewal/authorization lanes. [Failure handling](docs/architecture/consistency.md), [data model](docs/architecture/data-model.md).
+For deployment, use production mode, HTTPS origins, authenticated/private database and Redis connections, least-privilege SQL/IAM roles and externally managed credentials. The migration image includes tooling; the runtime image excludes development dependencies. Verify deployed Firestore rules/indexes, TLS/WSS, backups/restore, resource limits, real provider login, load behavior, signals, monitoring and rollback. [Failure handling](docs/architecture/consistency.md), [storage model](docs/architecture/data-model.md).

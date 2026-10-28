@@ -1,18 +1,28 @@
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+
+FROM base AS build
 COPY package*.json ./
 RUN npm ci
 COPY prisma ./prisma
 COPY prisma.config.ts tsconfig*.json ./
 RUN npm run prisma:generate
 COPY src ./src
-RUN npm run build && npm prune --omit=dev
+RUN npm run build
 
-FROM node:22-bookworm-slim AS runtime
+FROM build AS migration
+USER node
+CMD ["npm", "run", "db:migrate"]
+
+FROM build AS production-dependencies
+RUN npm prune --omit=dev
+
+FROM base AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 RUN chown node:node /app
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/package*.json ./
 USER node

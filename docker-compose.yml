@@ -1,16 +1,54 @@
 services:
+  app:
+    build:
+      context: .
+      target: runtime
+    environment:
+      NODE_ENV: development
+      PORT: '3000'
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chat}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chat}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-adminsdk.json
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      HTTP_RATE_LIMIT: ${HTTP_RATE_LIMIT:-120}
+      SOCKET_RATE_LIMIT: ${SOCKET_RATE_LIMIT:-120}
+      TYPING_RATE_LIMIT: ${TYPING_RATE_LIMIT:-10}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+    ports:
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+    secrets:
+      - source: firebase_adminsdk
+        target: firebase-adminsdk.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      target: migration
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chat}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chat}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
   postgres:
     image: postgres:17-bookworm
     environment:
-      POSTGRES_USER: chat
+      POSTGRES_USER: ${POSTGRES_USER:-chat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a local development password}
-      POSTGRES_DB: chat
-    ports:
-      - '127.0.0.1:5432:5432'
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U chat -d chat']
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -25,8 +63,6 @@ services:
         '-c',
         'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly no',
       ]
-    ports:
-      - '127.0.0.1:6379:6379'
     healthcheck:
       test:
         [
@@ -39,3 +75,6 @@ services:
     restart: unless-stopped
 volumes:
   postgres_data:
+secrets:
+  firebase_adminsdk:
+    file: ${FIREBASE_CREDENTIALS_FILE:-./firebase-adminsdk.json}

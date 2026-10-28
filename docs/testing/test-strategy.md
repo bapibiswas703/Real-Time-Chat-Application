@@ -52,6 +52,8 @@ Phone tests use the Auth Emulator's verification-code flow. Google tests use sup
 
 GitHub Actions provisions PostgreSQL 17/Redis 7.4, Node 22 and Java 21. It runs the secret guard, lockfile install, Prisma generation/migration, lint, strict checking, dependency gates, ordinary tests, build, isolated integration and compiled smoke. Any production advisory fails; the full-tree gate fails moderate or higher while reporting disclosed low development advisories.
 
-Jest uses native ESM TypeScript output through `tsconfig.jest.json`, ts-jest and the VM modules flag. A narrowly scoped Babel transform handles Firebase Admin's synchronous `jose` dependency only in tests. Production remains compiled CommonJS on Node 22.22.1+.
+The Node build uses `module` and `moduleResolution` set to `NodeNext`, matching current Node package resolution. With the package's default CommonJS format, emitted application files remain CommonJS on Node 22.22.1+.
+
+Jest uses native ESM TypeScript output through `tsconfig.jest.json`, ts-jest and the VM modules flag. Its `ES2022` module setting uses `bundler` resolution for Jest's transformed, extensionless imports. A narrowly scoped Babel transform handles Firebase Admin's synchronous `jose` dependency only in tests. Neither configuration uses the deprecated `node`/`node10` resolver.
 
 Record PASSED, FAILED, BLOCKED and NOT EXECUTED separately. Historical integration results do not establish a later revision's integration status. Actual provider login, container UID/signals, remote CI, cloud load/outages, restore and monitoring require their own evidence.

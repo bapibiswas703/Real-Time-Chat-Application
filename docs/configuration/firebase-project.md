@@ -51,4 +51,8 @@ A passing Admin check does not establish real Phone/Google client sign-in, every
 
 Use workload identity/ADC or mount a managed secret and set an absolute runtime path such as `/run/secrets/firebase-adminsdk.json`. The local JSON and `.env` must stay outside the image and Git history. Apply least-privilege project access and rotate compromised credentials through the owning account. No cloud configuration change is part of local credential setup.
 
-Docker Compose is optional. If used, its PostgreSQL user is `chat` and Redis requires the configured password; update the application URLs to match. The native example instead uses PostgreSQL user `postgres` and loopback Redis without authentication. Production requires authenticated services and reviewed TLS/private networking.
+## Docker and native profiles
+
+The README provides two complete startup workflows. Docker Compose runs the API, a one-shot Prisma migration, PostgreSQL and Redis. Use `.env.docker` with `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `APP_PORT` and `FIREBASE_CREDENTIALS_FILE`. Compose builds the internal service URLs and mounts the JSON read-only at `/run/secrets/firebase-adminsdk.json`; native URL/credential variables do not override these container values. Database/Redis ports are not published to the host.
+
+Direct Node execution uses `.env`, explicit `DATABASE_URL`/`REDIS_URL` and `GOOGLE_APPLICATION_CREDENTIALS=./firebase-adminsdk.json`. Its default PostgreSQL user is `postgres`, while Compose defaults to `chat`. Preserve the local profile when creating the separate Docker file. Production requires authenticated services and reviewed TLS/private networking.

@@ -76,3 +76,9 @@ The codebase uses conventional module folders and preserves chat behavior and au
 ## Local credential verification
 
 The Admin SDK credential was copied from Downloads to the ignored project-root `firebase-adminsdk.json`. Both `.env` and `.env.example` reference `./firebase-adminsdk.json`; the example includes no private key or actual password. The live profile leaves emulator variables unset. A fresh `npm run firebase:check` passed credential exchange, Auth read permission and default Firestore reads with this local path. Documentation links and terminology are checked before publication.
+
+## Docker workflow and resolver update
+
+Compose defines the compiled API, healthy PostgreSQL/Redis dependencies and a one-shot migration service that must finish successfully before API startup. The API mounts the local credential read-only; it is excluded from image context and Git. Migration tooling stays in a separate image target; runtime dependencies are pruned. The local Docker profile uses development mode and exposes only the API on loopback. Native execution remains separately documented.
+
+The Compose file passed the official Draft 2020-12 JSON schema and static checks for dependency conditions, build targets, private database ports and credential mount paths. Docker is unavailable on the verification host, so actual image build/start, effective UID and container health remain NOT EXECUTED. Static checks are distinct from container execution. TypeScript now uses NodeNext for the Node build and bundler resolution for Jest's ESM transform; strict checks, build and all 69 ordinary tests passed with these settings.
