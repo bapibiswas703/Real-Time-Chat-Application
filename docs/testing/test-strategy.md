@@ -24,7 +24,11 @@ npm run firebase:check
 | `test/secret-scan.cjs`          | Worktree/staged-blob credential filename/private-key/token scan                                                                           | Git and Node built-ins; not a complete history/all-formats audit |
 | `test/firebase-cloud-check.cjs` | Actual Admin credential exchange, Auth permission and Firestore read; explicit opt-in write probe                                         | Live configured Firebase project                                 |
 
-The current regression baseline is 82 ordinary tests across eleven suites, plus two Node secret-guard tests. Coverage and execution limits are in the [verification report](../security/final-audit.md). Transport tests are not labeled database integration.
+The pre-milestone baseline at `b7508d6` is 82 ordinary tests across eleven suites, plus two Node secret-guard tests (83.00% lines, 72.40% branches). Current milestone counts, coverage and actual execution limits are in the [verification report](../security/final-audit.md). Transport tests with infrastructure doubles are not labeled database integration.
+
+`test/unit/latest-history.spec.ts` covers latest/older edge cases (empty, one, short, full page), a 5000-message traversal with timestamp ties, deterministic nanosecond/ID boundaries, mixed/cross-chat/malformed cursors, bounded query plans, authorization, new-window buffering, lost-A/live-B repair, failed atomic commits and serialized client operations. The Firestore double models descending ordering/exclusive cursors explicitly and records requested limits; only emulator tests establish actual Firestore query behavior.
+
+`test/e2e/http.spec.ts` exercises mode/olderCursor validation over actual HTTP and checks generated OpenAPI query/response schemas. `test/integration/backend.spec.ts` separately seeds 5000 documents in the disposable Firestore emulator, verifies initial messages 4951–5000 and complete older pagination, and drives isolated Bapi/Satadal identities through chat creation/listing, real room joins, two-way Socket.IO delivery, retries, read notifications and disconnect/rejoin recovery. It drops A's notification while receiving actual live B, then verifies recovery from the unchanged checkpoint. A separate test closes only a test instance's Redis connection, asserts a structured failure/no persisted message, reconnects Redis and verifies a fresh authorized join.
 
 Version/header regressions also cover configurable URI prefixes, production HSTS, development Swagger/CSP, unversioned liveness, pre-parser rejection, retry/reset headers, forged forwarded IPs, exact CORS, and denial before expensive authentication. `test/e2e/http-security.spec.ts` runs an isolated real HTTP server with a coordination double.
 
@@ -48,6 +52,8 @@ SOCKET_RATE_LIMIT=2000
 ```
 
 Clear the live credential variable in this isolated process. Generate Prisma Client and apply migrations to the test database, then run `npm run test:emulators`. With test emulators already running, use `npm run test:integration`. After a build, `npm run test:smoke` checks compiled liveness/readiness and clean closure under that same isolated environment.
+
+The large seed test has a 120-second per-test timeout; ordinary integration tests retain 45 seconds. Seeding uses bounded 400-document batches with explicit fixture timestamps to exercise ties, only after the suite's demo-chat/test-database guards. Those timestamps are test data, not a production write path. Do not run this suite with the normal live `.env`. Emulator logs, binaries and disposable native data can be kept outside the repository. Docker execution is not required for the native test setup.
 
 `test/integration/backend.spec.ts` covers real SQL pair races/invariants, Firestore transactions/cursors/receipts/pointers, Redis Lua/TTL/device behavior and two-instance Socket.IO publication. It explicitly rejects missing test prerequisites instead of skipping. Fixture accounts/chats remain in the disposable stores. Never weaken those guards to run against a live project.
 

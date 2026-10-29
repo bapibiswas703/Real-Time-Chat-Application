@@ -51,12 +51,16 @@ The LiveEvents bus publishes after persistence. Messages does not import Realtim
 - PostgreSQL owns users/chats/membership; Firebase UID alone identifies accounts. Email/phone are profile fields, never merge keys.
 - Direct membership is exactly two users and immutable, including SQL trigger enforcement. No blocking/removal/deletion/group upgrade exists.
 - Firestore owns messages, receipts and last-seen pointers. A pointer may refer to an outgoing message; explicit receipts apply only to incoming messages.
-- History is oldest-first with precise timestamp/ID cursors. Own-chat listing uses stable UUID order rather than recent activity.
+- Default forward history is oldest-first with unchanged precise timestamp/ID cursors. Explicit `mode=latest` adds bounded recent/older history with direction-tagged olderCursor and chronological output. Initial headCursor seeds only a new recent-message window; older scrolling and live events never replace saved forward checkpoints. Own-chat listing uses stable UUID order rather than recent activity.
 - Presence, typing and rate counters are temporary Redis state. Live publication is best effort; stable IDs, retry keys and committed history checkpoints support recovery.
 - No distributed transaction, durable outbox or delivered-acknowledgement store is implemented. Add mutable membership only after designing cross-store authorization/revocation semantics.
 - Node 22.22.1+, strict TypeScript and locked dependencies are retained. Firebase credentials use ADC/workload identity outside the repository.
 
 [Data model](data-model.md), [failure handling](consistency.md), [API contracts](../api/rest-api.md), [security](../security/security-design.md), [verification](../testing/test-strategy.md).
+
+### Latest-history decision
+
+Keep one authorized messages endpoint with explicit `mode=latest`, rather than changing the existing no-cursor behavior or adding a second persistence implementation. MessagesService chooses/validates query combinations; MessagesRepository owns bounded Firestore queries. Controllers expose separate OpenAPI response models for both modes. The cursor codec shares tuple validation but keeps legacy forward bytes/shape and older direction markers separate. This is an additive query/protocol change: no SQL migration, Firestore document change, dependency, new business module or socket event is required. Recovery reuses the existing forward path and executable client reference.
 
 ## Configuration boundary
 

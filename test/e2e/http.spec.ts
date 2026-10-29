@@ -418,5 +418,74 @@ describe('HTTP boundary (infrastructure and identity test doubles)', () => {
     ])
       expect(doc.paths[path]).toBeDefined();
     expect(doc.components?.schemas?.SendMessageDto).toBeDefined();
+    const history = doc.paths['/api/v1/chat/{chatId}/messages']!.get!;
+    expect(history.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'mode',
+          schema: expect.objectContaining({ enum: ['forward', 'latest'] }),
+        }),
+        expect.objectContaining({ name: 'olderCursor' }),
+      ]),
+    );
+    expect(history.responses['200']).toMatchObject({
+      content: {
+        'application/json': {
+          schema: {
+            oneOf: [
+              { $ref: '#/components/schemas/ForwardHistoryResponseDto' },
+              { $ref: '#/components/schemas/LatestHistoryResponseDto' },
+            ],
+          },
+        },
+      },
+    });
+    expect(doc.components?.schemas?.LatestHistoryResponseDto).toMatchObject({
+      required: expect.arrayContaining(['items', 'olderCursor', 'headCursor']),
+      properties: { items: { maxItems: 100 } },
+    });
+  });
+  it('serves latest and older pages through the existing authorized HTTP route', async () => {
+    for (const [key, text] of [
+      ['http-latest-a', 'recent-A'],
+      ['http-latest-b', 'recent-B'],
+    ])
+      await request(app.getHttpServer())
+        .post(`/api/v1/chat/${chatId}/message/send`)
+        .set('Authorization', `Bearer ${alice}`)
+        .send({ senderId: alice, text, clientRequestId: key })
+        .expect(201);
+    const page = await request(app.getHttpServer())
+      .get(`/api/v1/chat/${chatId}/messages`)
+      .query({ mode: 'latest', limit: 1 })
+      .set('Authorization', `Bearer ${bob}`)
+      .expect(200);
+    expect(page.body.items).toHaveLength(1);
+    expect(page.body.olderCursor).toEqual(expect.any(String));
+    const older = await request(app.getHttpServer())
+      .get(`/api/v1/chat/${chatId}/messages`)
+      .query({ mode: 'latest', limit: 1, olderCursor: page.body.olderCursor })
+      .set('Authorization', `Bearer ${bob}`)
+      .expect(200);
+    expect(older.body.items[0].id).not.toBe(page.body.items[0].id);
+    await request(app.getHttpServer())
+      .get(`/api/v1/chat/${chatId}/messages`)
+      .query({ mode: 'latest' })
+      .set('Authorization', `Bearer ${other}`)
+      .expect(403);
+  });
+  it.each([
+    { mode: 'backward' },
+    { mode: 'latest', cursor: 'wrong-direction' },
+    { olderCursor: 'requires-latest' },
+    { mode: 'latest', olderCursor: '%%%' },
+    { mode: 'latest', olderCursor: 'a'.repeat(1025) },
+    { mode: 'latest', limit: 101 },
+  ])('rejects invalid history query %o over HTTP', async (query) => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/chat/${chatId}/messages`)
+      .query(query)
+      .set('Authorization', `Bearer ${alice}`)
+      .expect(400);
   });
 });

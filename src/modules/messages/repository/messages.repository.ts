@@ -9,7 +9,14 @@ import {
 } from 'firebase-admin/firestore';
 import { FirebaseService } from '@/shared/firebase/firebase.module';
 import { AppError } from '@/common/errors';
-import { decodeCursor, encodeCursor, PersistedMessage } from '../utils/message';
+import {
+  decodeCursor,
+  decodeOlderCursor,
+  encodeCursor,
+  encodeOlderCursor,
+  LatestHistoryPage,
+  PersistedMessage,
+} from '../utils/message';
 
 @Injectable()
 export class MessagesRepository {
@@ -98,6 +105,39 @@ export class MessagesRepository {
       items,
       nextCursor: snapshot.size > limit ? syncCursor : null,
       syncCursor,
+    };
+  }
+  async latest(
+    chatId: string,
+    limit: number,
+    olderCursor?: string,
+  ): Promise<LatestHistoryPage> {
+    // Read only one bounded descending page, then reverse that page for display.
+    let query = this.collection(chatId)
+      .orderBy('createdAt', 'desc')
+      .orderBy(FieldPath.documentId(), 'desc')
+      .limit(limit + 1);
+    if (olderCursor !== undefined) {
+      const order = decodeOlderCursor(chatId, olderCursor);
+      query = query.startAfter(
+        new Timestamp(order.seconds, order.nanoseconds),
+        order.id,
+      );
+    }
+    const snapshot = await query.get();
+    const items = snapshot.docs
+      .slice(0, limit)
+      .map((doc) => this.fromSnapshot(chatId, doc))
+      .reverse();
+    return {
+      items,
+      olderCursor:
+        snapshot.size > limit ? encodeOlderCursor(chatId, items[0]!) : null,
+      // A forward position at this page's newest persisted message. Only an
+      // initial latest page can seed a new live window; scrolling never resets it.
+      headCursor: items.length
+        ? encodeCursor(chatId, items[items.length - 1]!)
+        : null,
     };
   }
   async withMessage<T>(

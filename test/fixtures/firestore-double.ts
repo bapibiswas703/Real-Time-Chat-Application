@@ -34,6 +34,8 @@ class Ref {
 }
 class Query {
   private count = 100;
+  private direction: 'asc' | 'desc' = 'asc';
+  private readonly orders: { field: string; direction: 'asc' | 'desc' }[] = [];
   private after?: { timestamp: Timestamp; id: string };
   private filter?: { key: string; value: unknown };
   constructor(
@@ -43,7 +45,12 @@ class Query {
   doc(id: string) {
     return new Ref(this.store, `${this.path}/${id}`);
   }
-  orderBy() {
+  orderBy(field: unknown, direction: 'asc' | 'desc' = 'asc') {
+    this.direction = direction;
+    this.orders.push({
+      field: typeof field === 'string' ? field : '__name__',
+      direction,
+    });
     return this;
   }
   limit(count: number) {
@@ -59,6 +66,11 @@ class Query {
     return this;
   }
   async get() {
+    this.store.queries.push({
+      path: this.path,
+      limit: this.count,
+      orders: [...this.orders],
+    });
     const rows = [...this.store.rows]
       .filter(
         ([path]) =>
@@ -73,22 +85,21 @@ class Query {
         const first = a.get('createdAt') as Timestamp | undefined;
         const second = b.get('createdAt') as Timestamp | undefined;
         return (
-          (first && second
+          (this.direction === 'desc' ? -1 : 1) *
+          ((first && second
             ? first.seconds - second.seconds ||
               first.nanoseconds - second.nanoseconds
-            : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+            : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
         );
       })
       .filter((doc) => {
         if (!this.after) return true;
         const time = doc.get('createdAt') as Timestamp;
-        return (
-          time.seconds > this.after.timestamp.seconds ||
-          (time.seconds === this.after.timestamp.seconds &&
-            (time.nanoseconds > this.after.timestamp.nanoseconds ||
-              (time.nanoseconds === this.after.timestamp.nanoseconds &&
-                doc.id > this.after.id)))
-        );
+        const comparison =
+          time.seconds - this.after.timestamp.seconds ||
+          time.nanoseconds - this.after.timestamp.nanoseconds ||
+          (doc.id < this.after.id ? -1 : doc.id > this.after.id ? 1 : 0);
+        return (this.direction === 'desc' ? -comparison : comparison) > 0;
       })
       .slice(0, this.count);
     return { docs: rows, size: rows.length };
@@ -96,6 +107,11 @@ class Query {
 }
 export class FirestoreDouble {
   readonly rows = new Map<string, Row>();
+  readonly queries: {
+    path: string;
+    limit: number;
+    orders: { field: string; direction: 'asc' | 'desc' }[];
+  }[] = [];
   failWrites = false;
   now = new Timestamp(1700000000, 100);
   private queue: Promise<unknown> = Promise.resolve();

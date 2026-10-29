@@ -12,6 +12,16 @@ export interface PersistedMessage extends MessageOrder {
   clientRequestId: string | null;
   schemaVersion: 1;
 }
+export interface ForwardHistoryPage {
+  items: PersistedMessage[];
+  nextCursor: string | null;
+  syncCursor: string | null;
+}
+export interface LatestHistoryPage {
+  items: PersistedMessage[];
+  olderCursor: string | null;
+  headCursor: string | null;
+}
 export function compareOrder(a: MessageOrder, b: MessageOrder): number {
   return (
     a.seconds - b.seconds ||
@@ -32,16 +42,40 @@ export function validateText(text: string): void {
     );
 }
 export function encodeCursor(chatId: string, order: MessageOrder): string {
+  return encodePosition(chatId, order);
+}
+export function encodeOlderCursor(chatId: string, order: MessageOrder): string {
+  return encodePosition(chatId, order, 'older');
+}
+function encodePosition(
+  chatId: string,
+  order: MessageOrder,
+  direction?: 'older',
+): string {
   return Buffer.from(
     JSON.stringify({
       chatId,
       seconds: order.seconds,
       nanoseconds: order.nanoseconds,
       id: order.id,
+      ...(direction ? { direction } : {}),
     }),
   ).toString('base64url');
 }
 export function decodeCursor(chatId: string, cursor: string): MessageOrder {
+  return decodePosition(chatId, cursor);
+}
+export function decodeOlderCursor(
+  chatId: string,
+  cursor: string,
+): MessageOrder {
+  return decodePosition(chatId, cursor, 'older');
+}
+function decodePosition(
+  chatId: string,
+  cursor: string,
+  direction?: 'older',
+): MessageOrder {
   try {
     if (cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor))
       throw new Error();
@@ -52,7 +86,11 @@ export function decodeCursor(chatId: string, cursor: string): MessageOrder {
       !value ||
       typeof value !== 'object' ||
       Array.isArray(value) ||
-      Object.keys(value).sort().join(',') !== 'chatId,id,nanoseconds,seconds' ||
+      Object.keys(value).sort().join(',') !==
+        (direction
+          ? 'chatId,direction,id,nanoseconds,seconds'
+          : 'chatId,id,nanoseconds,seconds') ||
+      (direction !== undefined && value.direction !== direction) ||
       value.chatId !== chatId ||
       !Number.isSafeInteger(value.seconds) ||
       !Number.isSafeInteger(value.nanoseconds) ||

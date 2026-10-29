@@ -14,14 +14,14 @@ Profiles return internal id, displayName, email, phoneNumber, avatarUrl and UTC 
 
 ## Chat operations
 
-| Method | Route                                        | Request fields                   |
-| ------ | -------------------------------------------- | -------------------------------- |
-| POST   | /api/v1/chat/create                          | userAId, userBId                 |
-| POST   | /api/v1/chat/:chatId/message/send            | senderId, text, clientRequestId? |
-| GET    | /api/v1/chat/:chatId/messages                | limit?, cursor?                  |
-| POST   | /api/v1/chat/:chatId/message/:messageId/read | userId                           |
-| POST   | /api/v1/chat/:chatId/lastseen                | userId, messageId                |
-| GET    | /api/v1/user/:userId/chats                   | limit?, cursor?                  |
+| Method | Route                                        | Request fields                       |
+| ------ | -------------------------------------------- | ------------------------------------ |
+| POST   | /api/v1/chat/create                          | userAId, userBId                     |
+| POST   | /api/v1/chat/:chatId/message/send            | senderId, text, clientRequestId?     |
+| GET    | /api/v1/chat/:chatId/messages                | limit?, mode?, cursor?, olderCursor? |
+| POST   | /api/v1/chat/:chatId/message/:messageId/read | userId                               |
+| POST   | /api/v1/chat/:chatId/lastseen                | userId, messageId                    |
+| GET    | /api/v1/user/:userId/chats                   | limit?, cursor?                      |
 
 ## Create or retrieve a chat
 
@@ -65,13 +65,47 @@ Success means Firestore committed. Retries with the same key/text return the sam
 
 ## Message history
 
+### Forward synchronization (unchanged default)
+
 `GET /api/v1/chat/CHAT_ID/messages?limit=50&cursor=OPAQUE_CURSOR`
 
 Returns `{"items":[MESSAGE],"nextCursor":"opaque-or-null","syncCursor":"opaque-or-null"}`. Default limit 50, maximum 100. Ordering is ascending server timestamp seconds/nanoseconds, then document ID ascending. nextCursor is present only when more records existed during the page read; null ends the current traversal. syncCursor always retains the last returned position (or the input cursor for an empty page) for later reconnection. New messages can arrive afterward. History never marks messages read or advances last-seen state.
 
 The cursor contains exactly `{chatId,seconds,nanoseconds,id}` as base64url JSON, never message text or sender metadata. Maximum input length is 1024 characters; extra fields, invalid types/ranges/IDs and another chat's cursor are rejected. It is a position, not an access token; membership authorization applies before every history read.
 
-Keep a separate durable history checkpoint per chat. Join first and buffer live events, then fetch ascending history after the last committed syncCursor. Commit each successfully fetched page and its syncCursor together in client storage; continue using nextCursor until null, saving syncCursor on the final page too. If fetching or local persistence fails, resume from the last committed page. Deduplicate history, live events and send acknowledgements by stable message ID. **Never advance the history checkpoint from a live event or send acknowledgement:** later live B does not prove earlier A was received. An empty page preserves the input position. A new client starts with no cursor and traverses from the oldest message. Keep only one synchronization loop active per chat. See the executable client protocol reference in `test/fixtures/history-sync-client.ts` and its lost-A/live-B regression tests.
+Keep a separate durable history checkpoint per chat. Join first and buffer live events, then fetch ascending history after the last committed syncCursor. Commit each successfully fetched page and its syncCursor together in client storage; continue using nextCursor until null, saving syncCursor on the final page too. If fetching or local persistence fails, resume from the last committed page. Deduplicate history, live events and send acknowledgements by stable message ID. **Never advance the history checkpoint from a live event or send acknowledgement:** later live B does not prove earlier A was received. An empty page preserves the input position. Without a cursor, forward mode starts from the oldest message; callers can explicitly choose latest mode for a new recent-message window. `mode=forward` is an optional spelling of the unchanged default. Keep only one history operation active per chat. See the executable client protocol reference in `test/fixtures/history-sync-client.ts` and its lost-A/live-B regression tests.
+
+### Latest messages and older pagination
+
+```http
+GET /api/v1/chat/CHAT_ID/messages?mode=latest&limit=50
+Authorization: Bearer TOKEN
+```
+
+```json
+{
+  "items": ["MESSAGE_4951", "...", "MESSAGE_5000"],
+  "olderCursor": "opaque-older-position-or-null",
+  "headCursor": "opaque-forward-position-or-null"
+}
+```
+
+Items are complete message objects as in the send response above; strings here only illustrate positions. Firestore queries `(createdAt DESC, document ID DESC)` with `limit+1`, then the server reverses **only that page** into chronological order. It never reads all 5000 records to return 50. Default limit is 50; 1–100 is accepted. Equal timestamps use the same deterministic document-ID tie-break as forward sync, including native nanoseconds.
+
+```http
+GET /api/v1/chat/CHAT_ID/messages?mode=latest&limit=50&olderCursor=OLDER_CURSOR
+Authorization: Bearer TOKEN
+```
+
+The next page contains messages strictly older than the previous page's oldest item. Prepend/merge it by ID. `olderCursor=null` means the oldest available message has been reached; empty chats return `{items:[],olderCursor:null,headCursor:null}`. One-message and short conversations return all available items and no older cursor. New appended messages do not shift the stored older boundary. No offset pagination or count query is used.
+
+An older cursor contains exactly `{chatId,seconds,nanoseconds,id,direction:"older"}` as base64url JSON, max 1024 characters, with no message text or sender. It is validated for shape, direction, range and chat. Forward cursors keep their original four-field format. A forward cursor supplied as olderCursor or an older cursor supplied as cursor returns 400. `cursor` is forbidden with `mode=latest`; olderCursor is forbidden in default/forward mode. Invalid modes, extra query fields and oversized/invalid page inputs return 400. Membership authorization still protects both modes; cursors grant no access.
+
+`headCursor` is a forward position at the **newest item on the returned page**. Only the initial latest page of a **new local history window** may seed its forward checkpoint, and only after the page is durably committed. On an older-page response this field describes that older page; ignore it for synchronization. Scrolling never changes the existing sync checkpoint. A latest window deliberately leaves older, not-yet-loaded history behind its independent olderCursor; it does not claim all historical messages were locally fetched.
+
+For returning clients, keep the existing saved syncCursor and fetch forward from it; replacing it with a fresh latest head can skip more than 50 offline messages. For new clients, subscribe/join first, buffer live packets while loading latest, atomically commit its items/headCursor/olderCursor, then run forward sync after headCursor until nextCursor is null. If the initial page is empty, use no forward cursor so messages arriving just afterward are still fetched. Persist that the local window was initialized even when its checkpoint is null: a restored empty window resumes forward without a cursor rather than being mistaken for a new latest window. Save fetched forward pages and their syncCursor together. Buffered live packets/acks update the display only, never this checkpoint. Render the merged timeline sorted by `(seconds,nanoseconds,id)`. Repeat sync on reconnect, foregrounding or a suitable polling cadence to repair lost notifications while still connected.
+
+Page work is bounded to at most 101 fetched documents / 100 returned messages, each with the existing 4000-UTF-16-unit text cap; cursors are independently capped at 1024 characters. The existing 16 KiB incoming HTTP JSON/frame limits remain. The response is a bounded history page, not a 16 KiB response contract. No SQL schema, Firestore document schema, Socket event or authentication contract changed.
 
 ## Mark an incoming message read
 

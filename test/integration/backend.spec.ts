@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import 'dotenv/config';
 import { INestApplication } from '@nestjs/common';
+import { Timestamp } from 'firebase-admin/firestore';
 import { NestFactory } from '@nestjs/core';
 import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
@@ -14,7 +15,11 @@ import { RedisIoAdapter } from '@/shared/redis/redis-io.adapter';
 import { PresenceService } from '../../src/modules/presence/service/presence.service';
 import { Ack } from '../../src/modules/realtime/dto/events.dto';
 import { HistorySyncClient } from '../fixtures/history-sync-client';
-import { PersistedMessage } from '../../src/modules/messages/utils/message';
+import {
+  compareOrder,
+  LatestHistoryPage,
+  PersistedMessage,
+} from '../../src/modules/messages/utils/message';
 
 interface Login {
   id: string;
@@ -493,6 +498,273 @@ describe('Real PostgreSQL + Firebase emulators + Redis + Socket.IO', () => {
     });
     expect(await presence.online('expired-fixture')).toBe(false);
   });
+  it('pages a seeded 5000-message conversation from latest to oldest in the real Firestore emulator', async () => {
+    const suffix = String(Date.now()).slice(-8);
+    const owner = await login(`+1222${suffix}`),
+      peer = await login(`+1333${suffix}`);
+    const created = await request(app!.getHttpServer())
+      .post('/api/v1/chat/create')
+      .set('Authorization', auth(owner))
+      .send({ userAId: owner.id, userBId: peer.id })
+      .expect(201);
+    const id = String(created.body.chatId),
+      path = `/api/v1/chat/${id}/messages`;
+    const firestore = app!.get(FirebaseService).firestore;
+    const collection = firestore.collection(`chats/${id}/messages`);
+    // Privileged fixture seeding is emulator-only, in guarded disposable stores.
+    for (let start = 1; start <= 5000; start += 400) {
+      const batch = firestore.batch();
+      for (let i = start; i <= Math.min(start + 399, 5000); i++)
+        batch.create(collection.doc(`seed-${String(i).padStart(5, '0')}`), {
+          senderId: owner.id,
+          text: `message-${i}`,
+          schemaVersion: 1,
+          clientRequestId: null,
+          createdAt: new Timestamp(1700000000 + Math.floor((i - 1) / 37), 123),
+        });
+      await batch.commit();
+    }
+    const page = await request(app!.getHttpServer())
+      .get(path)
+      .query({ mode: 'latest' })
+      .set('Authorization', auth(peer))
+      .expect(200);
+    expect(page.body.items.map((m: PersistedMessage) => m.text)).toEqual(
+      Array.from({ length: 50 }, (_, i) => `message-${4951 + i}`),
+    );
+    const forward = await request(app!.getHttpServer())
+      .get(path)
+      .set('Authorization', auth(peer))
+      .expect(200);
+    expect(forward.body.items[0].text).toBe('message-1');
+    const all: PersistedMessage[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await request(app!.getHttpServer())
+        .get(path)
+        .query({
+          mode: 'latest',
+          limit: 100,
+          ...(cursor ? { olderCursor: cursor } : {}),
+        })
+        .set('Authorization', auth(peer))
+        .expect(200);
+      const body = result.body as LatestHistoryPage;
+      expect(body.items.length).toBeLessThanOrEqual(100);
+      all.unshift(...body.items);
+      cursor = body.olderCursor ?? undefined;
+    } while (cursor);
+    expect(all.map((m) => m.text)).toEqual(
+      Array.from({ length: 5000 }, (_, i) => `message-${i + 1}`),
+    );
+    expect(new Set(all.map((m) => m.id)).size).toBe(5000);
+    await request(app!.getHttpServer())
+      .get(`/api/v1/chat/${chatId}/messages`)
+      .query({ mode: 'latest', olderCursor: page.body.olderCursor })
+      .set('Authorization', auth(alice))
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(path)
+      .query({ mode: 'latest' })
+      .set('Authorization', auth(outsider))
+      .expect(403);
+  }, 120000);
+
+  it('runs Bapi/Satadal room initialization, bidirectional delivery, reads and disconnect recovery with isolated identities', async () => {
+    const suffix = String(Date.now()).slice(-8);
+    const bapi = await login(`+1444${suffix}`),
+      satadal = await login(`+1888${suffix}`);
+    const create = () =>
+      request(app!.getHttpServer())
+        .post('/api/v1/chat/create')
+        .set('Authorization', auth(bapi))
+        .send({ userAId: bapi.id, userBId: satadal.id })
+        .expect(201);
+    const created = await create();
+    expect((await create()).body.chatId).toBe(created.body.chatId);
+    const id = String(created.body.chatId),
+      path = `/api/v1/chat/${id}`;
+    const list = await request(app!.getHttpServer())
+      .get(`/api/v1/user/${bapi.id}/chats`)
+      .set('Authorization', auth(bapi))
+      .expect(200);
+    expect(
+      list.body.items.some((c: { chatId: string }) => c.chatId === id),
+    ).toBe(true);
+    const a = await connect(app!, bapi),
+      b = await connect(app!, satadal),
+      blocked = await connect(app!, outsider);
+    const client = new HistorySyncClient<PersistedMessage>(null, compareOrder);
+    b.on('message:new', (message: PersistedMessage) =>
+      client.notification(message),
+    );
+    expect((await emit(blocked, 'chat:join', { chatId: id })).ok).toBe(false);
+    expect(await emit(a, 'chat:join', { chatId: id })).toMatchObject({
+      ok: true,
+      data: { syncRequired: true },
+    });
+    expect(await emit(b, 'chat:join', { chatId: id })).toMatchObject({
+      ok: true,
+      data: { syncRequired: true },
+    });
+    const send = async (
+      socket: Socket,
+      senderId: string,
+      text: string,
+      key: string,
+    ) => {
+      const ack = await emit<PersistedMessage>(socket, 'message:send', {
+        chatId: id,
+        senderId,
+        text,
+        clientRequestId: key,
+      });
+      if (!ack.ok) throw new Error(ack.error.code);
+      return ack.data;
+    };
+    const incoming = new Promise<PersistedMessage>((resolve) =>
+      b.once('message:new', resolve),
+    );
+    let first!: PersistedMessage;
+    await client.initializeLatest(
+      async () => {
+        // Empty snapshot followed by a live message before initial page commit.
+        const result = await request(app!.getHttpServer())
+          .get(`${path}/messages`)
+          .query({ mode: 'latest' })
+          .set('Authorization', auth(satadal))
+          .expect(200);
+        expect(result.body).toEqual({
+          items: [],
+          olderCursor: null,
+          headCursor: null,
+        });
+        first = await send(a, bapi.id, 'Hello Satadal', 'bapi-first');
+        expect((await withTimeout(incoming, 8000)).id).toBe(first.id);
+        return result.body;
+      },
+      async () => {},
+    );
+    expect((await send(a, bapi.id, 'Hello Satadal', 'bapi-first')).id).toBe(
+      first.id,
+    );
+    const replyEvent = new Promise<PersistedMessage>((resolve) => {
+      a.on('message:new', (message: PersistedMessage) => {
+        if (message.clientRequestId === 'satadal-reply') resolve(message);
+      });
+    });
+    const reply = await send(b, satadal.id, 'Hello Bapi', 'satadal-reply');
+    expect((await withTimeout(replyEvent, 8000)).id).toBe(reply.id);
+    const readEvent = new Promise<{ messageId: string; readAt: string }>(
+      (resolve) => a.once('message:read:updated', resolve),
+    );
+    const read = await emit<{ readAt: string }>(b, 'message:read', {
+      chatId: id,
+      messageId: first.id,
+      userId: satadal.id,
+    });
+    expect(read.ok).toBe(true);
+    expect((await withTimeout(readEvent, 8000)).messageId).toBe(first.id);
+    const repeated = await emit<{ readAt: string }>(b, 'message:read', {
+      chatId: id,
+      messageId: first.id,
+      userId: satadal.id,
+    });
+    expect(repeated.ok && repeated.data.readAt).toBe(
+      read.ok && read.data.readAt,
+    );
+    const synchronize = () =>
+      client.synchronize(
+        async (cursor) => {
+          const result = await request(app!.getHttpServer())
+            .get(`${path}/messages`)
+            .query({ limit: 1, ...(cursor ? { cursor } : {}) })
+            .set('Authorization', auth(satadal))
+            .expect(200);
+          return result.body;
+        },
+        async () => {},
+      );
+    await synchronize();
+    const saved = client.syncCursor;
+    b.disconnect();
+    const missedA = await send(a, bapi.id, 'offline-A', 'offline-a');
+    const missedB = await send(a, bapi.id, 'offline-B', 'offline-b');
+    const reconnected = await connect(app!, satadal);
+    reconnected.on('message:new', (message: PersistedMessage) =>
+      client.notification(message),
+    );
+    expect((await emit(reconnected, 'chat:join', { chatId: id })).ok).toBe(
+      true,
+    );
+    expect(client.syncCursor).toBe(saved);
+    await synchronize();
+    expect(client.items.map((m) => m.id)).toEqual(
+      [first, reply, missedA, missedB].sort(compareOrder).map((m) => m.id),
+    );
+    // Lose A's notification while connected, receive B, and keep the old checkpoint.
+    reconnected.removeAllListeners('message:new');
+    const checkpoint = client.syncCursor;
+    const laterNotification = new Promise<PersistedMessage>((resolve) => {
+      reconnected.on('message:new', (message: PersistedMessage) => {
+        if (message.clientRequestId === 'live-b') {
+          client.notification(message);
+          resolve(message);
+        }
+      });
+    });
+    const lostA = await send(a, bapi.id, 'lost-A', 'lost-a');
+    const liveB = await send(a, bapi.id, 'live-B', 'live-b');
+    expect((await withTimeout(laterNotification, 8000)).id).toBe(liveB.id);
+    client.notification(liveB);
+    expect(client.syncCursor).toBe(checkpoint);
+    await synchronize();
+    expect(client.items.map((m) => m.id)).toEqual(
+      [first, reply, missedA, missedB, lostA, liveB]
+        .sort(compareOrder)
+        .map((m) => m.id),
+    );
+    const actual = await app!
+      .get(FirebaseService)
+      .firestore.doc(`chats/${id}/messages/${first.id}`)
+      .get();
+    expect(actual.get('text')).toBe('Hello Satadal');
+    a.disconnect();
+    reconnected.disconnect();
+    blocked.disconnect();
+  });
+
+  it('fails closed during a real Socket.IO main-Redis connection outage and recovers after reconnect', async () => {
+    const isolated = await start();
+    try {
+      const socket = await connect(isolated, alice);
+      expect((await emit(socket, 'chat:join', { chatId })).ok).toBe(true);
+      const redis = isolated.get(RedisService);
+      await redis.client.close();
+      expect(
+        await emit(socket, 'message:send', {
+          chatId,
+          senderId: alice.id,
+          text: 'must not persist during outage',
+          clientRequestId: 'outage-key',
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE' } });
+      const rows = await app!
+        .get(FirebaseService)
+        .firestore.collection(`chats/${chatId}/messages`)
+        .where('clientRequestId', '==', 'outage-key')
+        .get();
+      expect(rows.empty).toBe(true);
+      await redis.client.connect();
+      const recovered = await connect(isolated, alice);
+      expect((await emit(recovered, 'chat:join', { chatId })).ok).toBe(true);
+      recovered.disconnect();
+      socket.disconnect();
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it('denies direct Firestore client access and disabled Firebase users', async () => {
     const url = `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/demo-chat/databases/(default)/documents/chats/${chatId}/messages`;
     expect((await fetch(url)).status).toBe(403);

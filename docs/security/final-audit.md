@@ -2,6 +2,100 @@
 
 Updated: 29 October 2026. This report records verified module behavior, security remediation and remaining deployment checks. Results identify their test environment and execution limits.
 
+## Latest-history implementation milestone — current results
+
+This section supersedes older test counts and historical integration limitations below. The work is an additive Messages-module change; existing authentication, SQL constraints, Firestore message/receipt schemas, Redis leases, Socket.IO events and all `/api/v1` endpoints remain in place. No dependencies, migrations, branches, commits, staging, pushes, PRs, HR emails or cloud resources were changed.
+
+### Baseline and existing capabilities
+
+Baseline: clean working tree at `b7508d6a6d5fbd004d7e0f21146ae51319b23841`, 82 ordinary tests / 11 suites, 83.00% lines, 82.32% statements, 72.40% branches and 75.53% functions. The preceding independent audit also verified 14 integration tests and compiled smoke in GitHub Actions for that commit. Those remote results describe the baseline commit, not these uncommitted changes.
+
+Already implemented: Firebase Phone/Google provider policy and revocation-aware verification; UID/UUID mapping and concurrent first login; canonical direct-chat transactions/constraints; bounded own-chat listing; forward timestamp/ID pagination; idempotent message persistence; authorized room joins/per-event/private-delivery checks; read receipts and monotonic last-seen-message; Redis multi-device presence, typing expiry and rate limits; forward history recovery/deduplication; HTTP hardening, health and metrics.
+
+The verified missing capability was explicit recent-message loading and older scrolling. The original endpoint without a cursor fetched the oldest 50 records. Default/forward consumers still receive exactly that existing behavior and response shape.
+
+### Implementation and contracts
+
+| Capability               | Contract / decision                                                                                                                            | Source                                                                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Latest initial page      | `GET /api/v1/chat/:chatId/messages?mode=latest&limit=50` → `{items,olderCursor,headCursor}`; newest 50 returned chronologically                | `src/modules/messages/repository/messages.repository.ts:110`                                                                                                     |
+| Older scrolling          | Same route with `mode=latest&olderCursor=...`; descending timestamp + ID, exclusive startAfter, limit+1, reverse only selected page            | `src/modules/messages/repository/messages.repository.ts:118`                                                                                                     |
+| Forward compatibility    | Existing `?limit=50&cursor=...` / explicit `mode=forward` → `{items,nextCursor,syncCursor}`; original four-field cursor bytes/meaning retained | `src/modules/messages/utils/message.ts:44`                                                                                                                       |
+| Cursor separation        | Older payload adds only `direction:"older"`; both codecs validate exact fields, chat, timestamp/ID ranges, size and content-free position      | `src/modules/messages/utils/message.ts:68`                                                                                                                       |
+| Authorization/validation | Same membership service, 1–100 page cap, no mixed mode/cursor parameters; no repository bypass                                                 | `src/modules/messages/service/messages.service.ts:59`                                                                                                            |
+| OpenAPI                  | Query DTO and actual forward/latest message/page response schemas, including null cursors and 100-item bounds                                  | `src/modules/messages/dto/history-query.dto.ts`; `src/modules/messages/dto/history-response.dto.ts`; `src/modules/messages/controller/messages.controller.ts:48` |
+| Client protocol          | New-window initializeLatest, separate older position, ordered ID merge, commit-before-checkpoint; preserve existing forward synchronize        | `test/fixtures/history-sync-client.ts:46`                                                                                                                        |
+
+Only a committed **initial** latest page seeds a new local window's headCursor. Saved reconnect checkpoints, live packets, send acknowledgements and older pages never replace/advance that position. Register handlers before room join; await its acknowledgement; buffer while loading; forward-sync after the initial snapshot; merge by ID and sort native seconds/nanoseconds/ID. Returning clients resume the saved forward cursor, rather than selecting a newer latest head and skipping an offline backlog. See [full protocol](../architecture/realtime-flow.md#history-synchronization) and [REST examples](../api/rest-api.md#message-history).
+
+### Actual execution results
+
+| Check                                                                | Status       | Evidence / scope                                                                                                                                                                                                        |
+| -------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lint                                                                 | PASS         | `npm run lint`, final source/tests/config, exit 0.                                                                                                                                                                      |
+| Strict typecheck                                                     | PASS         | `npm run typecheck`, including updated integration and client fixtures, exit 0.                                                                                                                                         |
+| Build                                                                | PASS         | Exact `npm run build` (tsc + alias rewriting), exit 0.                                                                                                                                                                  |
+| Unit + HTTP + Socket transport                                       | PASS         | **107 tests / 12 suites**, no skipped tests, 89.023s. Identity/storage doubles remain explicitly labeled. **25 added tests**: 18 latest-history/client cases and 7 HTTP cases; existing Swagger contract test expanded. |
+| PostgreSQL + Firestore/Auth Emulator + Redis + Socket.IO integration | PASS         | **17 tests / 2 suites**, no skips, 59.995s. **3 added scenarios**: 5000-message history, complete Bapi/Satadal lifecycle, real main-Redis connection failure/recovery. Includes the 3 existing real Redis tests.        |
+| Compiled smoke                                                       | PASS         | Current built AppModule: `/health/live`, `/health/ready`, clean `app.close()` under the same isolated services. Not Linux SIGTERM/draining proof.                                                                       |
+| Security scan                                                        | PASS         | Two existing Node tests passed; scanner passed on 101 current repository files / 0 staged blobs. No production credential contents/tokens printed or committed.                                                         |
+| Production dependency audit                                          | PASS         | Fresh `npm audit --omit=dev`: zero findings, exit 0.                                                                                                                                                                    |
+| Full dependency audit                                                | FAIL         | Fresh `npm audit`: six **low development** findings through existing deepmerge/Jest/ts-jest chain, exit 1. No moderate/high/critical findings; no dependency edits.                                                     |
+| Git diff / scope                                                     | PASS         | Reviewed source, tests, docs and whitespace; no changes to dependency manifests, lockfile, auth/security controls, schema, migration, Socket gateway or lease code. All changes remain unstaged.                        |
+| Actual Phone/Google client provider flow                             | BLOCKED      | No suitable real test accounts/client tokens; emulator flows do not prove SMS/reCAPTCHA/Google OAuth or deployed IAM.                                                                                                   |
+| Docker                                                               | NOT EXECUTED | Explicitly skipped; Docker unavailable.                                                                                                                                                                                 |
+| Remote CI for this milestone                                         | NOT EXECUTED | No commit/push was authorized. Baseline Actions results do not cover uncommitted changes.                                                                                                                               |
+
+Local integration used a separate PostgreSQL **18** cluster/database and Memurai Redis-compatible process, plus Auth Emulator and Firestore Emulator **1.22.0** under demo project `demo-chat`. PostgreSQL and Redis used ports 15440/16390; Firebase used 19099/18080 with separate hub/logging ports. A discovered bundled Java 25 runtime ran the emulator; no new Node/project dependency was installed. Existing PostgreSQL/Redis services and the normal live `.env` were not used or altered. Live Google credentials were cleared in the isolated child process. The committed SQL migration was applied only to the disposable test database. All owned test services/emulators stopped after the run. CI continues to target PostgreSQL17/Redis7.4/Java21; those exact platform versions were not rerun remotely for this milestone.
+
+Coverage is ordinary-suite coverage only; integration and secret tests are not merged into it:
+
+| Metric     | Baseline | Current    | Covered / total |
+| ---------- | -------- | ---------- | --------------- |
+| Lines      | 83.00%   | **83.89%** | 625 / 745       |
+| Statements | 82.32%   | **83.19%** | 678 / 815       |
+| Branches   | 72.40%   | **74.34%** | 313 / 421       |
+| Functions  | 75.53%   | **76.41%** | 149 / 195       |
+
+### Requirement traceability and review
+
+| Requirement                                                            | Verification                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Latest 50 from 5000, chronological display, max100 and efficient query | Real Firestore emulator returns messages 4951–5000; bounded query structure also asserted in unit tests. No offset/all-record application read.                                               |
+| Older pages, timestamp/ID ties, no gaps/duplicates                     | All 5000 emulator records traversed at 100/page; grouped equal timestamps straddle boundaries. Unit tests also assert nanosecond/ID ties and appends during older traversal.                  |
+| Empty, one, short, page-size boundary                                  | Unit cases 0/1/17/50/51; empty initial-room snapshot exercised in real integration.                                                                                                           |
+| Invalid/cross-chat/mixed cursors, text-free/size bounds                | Unit and actual HTTP negatives; real emulator cross-chat cursor denied; existing nonmember BOLA checks plus latest-mode outsider denial.                                                      |
+| Full room initialization                                               | Synthetic Bapi/Satadal Firebase emulator sessions → SQL IDs → create/reuse/list → actual socket join acknowledgement → latest/history + buffered live merge. Join returns no history.         |
+| Two-way messages, stable IDs/retries, unauthorized third user          | Real Socket.IO against the integrated server; both directions received and persisted text checked; keyed retry, outsider join and nonmember history negatives.                                |
+| Disconnect/reconnect/rejoin, missed A/B                                | Actual disconnect/new connection/rejoin, forward catch-up from saved position, ordered/deduplicated final timeline.                                                                           |
+| Lost A then live B                                                     | Integration drops A's callback while receiving actual B notification; checkpoint stays fixed, forward synchronization retrieves both.                                                         |
+| Read receipts and last-seen                                            | Real-time sender read update added; stable repeated readAt; existing real-store receipt/pointer/missing-message/regression tests pass unchanged.                                              |
+| Typing, multi-device presence, stale renewal                           | Existing Redis Lua, TTL, multi-device and delayed-heartbeat tests pass; main Redis connection outage returns structured error and writes no message, then fresh join succeeds after recovery. |
+| Firebase policy/mapping/security                                       | Existing invalid/expired/revoked/provider/UID race/spoofing tests and real emulator Google/Phone/disable/revoke paths pass. Production verifier unchanged.                                    |
+| Architecture/consistency                                               | Only Messages query/controller/DTO/codec changed in production source; no distributed SQL/Firestore write added. Existing transaction boundaries and immutable membership remain.             |
+
+No new critical/high security issue was identified in final review. Cursor data is unsigned navigation state, never an access token; membership still precedes data access. A direction marker prevents accidental forward/older interchange, not malicious forgery. Each response has at most 100 messages with existing text caps, and only 101 documents can be requested by the query; the request cursor cap remains 1024 characters. Existing 16 KiB inbound limits are unchanged and are not advertised as a response limit.
+
+### Exact changed files
+
+Production source: `src/modules/messages/controller/messages.controller.ts`, `src/modules/messages/repository/messages.repository.ts`, `src/modules/messages/service/messages.service.ts`, `src/modules/messages/utils/message.ts`, new `src/modules/messages/dto/history-query.dto.ts`, new `src/modules/messages/dto/history-response.dto.ts`.
+
+Tests/fixtures: new `test/unit/latest-history.spec.ts`, `test/e2e/http.spec.ts`, `test/fixtures/firestore-double.ts`, `test/fixtures/history-sync-client.ts`, `test/integration/backend.spec.ts`.
+
+Documentation: `README.md`, `docs/api/rest-api.md`, `docs/api/socket-events.md`, `docs/architecture/realtime-flow.md`, `docs/architecture/data-model.md`, `docs/architecture/consistency.md`, `docs/architecture/modular-monolith.md`, `docs/testing/test-strategy.md`, this `docs/security/final-audit.md`. Total: **20 files**, including **3 new files**. No application/database/platform rewrite.
+
+### Limitations and submission decision
+
+**HR submission: GO for the locally tested milestone.** Existing six mandatory contracts are preserved; explicit latest/older behavior is additive. The remote repository has not been updated because committing/pushing is prohibited in this milestone.
+
+**Production deployment: NOT READY.** Actual provider client sign-in, deployed rules/indexes/IAM, production SQL/Redis privileges/TLS, realistic load/cost and adapter-only failover, app container execution, Linux SIGTERM/draining, monitoring/alerts, backups/restore and rollout/rollback remain separate release gates. The native test platform is PostgreSQL18/Memurai/Java25, while CI platform verification awaits a later authorized push. The reference client holds data in memory and delegates atomic durable commits to the consuming client; no frontend/local-store implementation was added. Message history assumes immutable server-timestamped records, not administrative backdating/deletion. No exactly-once network delivery or durable DELIVERED status is claimed. SENT=persisted; READ=explicit receipt; per-chat last-seen-message and Redis online state are separate.
+
+Temporary raw logs, JSON results, coverage, emulator binaries/configuration and service data are outside the repository in the chat's `history-milestone` artifact directory. They include generated emulator-only OTP diagnostics; those are not production tokens/credentials and are not part of source control. Groups, media, edits/deletes, FCM, BullMQ and durable delivery/outbox remain out of scope.
+
+## Historical baseline notes
+
+The remaining sections record earlier work and its then-current evidence. Their 82-test counts, earlier local emulator blockage and native/cloud probes are historical, not the current milestone result. Current executed results above take precedence.
+
 ## Architecture and cleanup
 
 The backend is one NestJS modular monolith with Auth, Users, Chats, Messages, ReadReceipts, Presence and Realtime modules. Each module has only the folders it needs: controller, service, repository, dto, utils or gateway. Shared SDK/connection providers live under `src/shared/`. Repositories are private providers; cross-module calls use exported services. Services expose business operations; repositories remain private to each module.

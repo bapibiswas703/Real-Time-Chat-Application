@@ -144,12 +144,24 @@ Clients sign in using Firebase, obtain an ID token and send `Authorization: Bear
 | ------ | ---------------------------------------------- | ---------------------------------------------- |
 | POST   | `/api/v1/chat/create`                          | Create/retrieve a direct pair                  |
 | POST   | `/api/v1/chat/:chatId/message/send`            | Persist a message and attempt live publication |
-| GET    | `/api/v1/chat/:chatId/messages`                | Read timestamp/ID-ordered history              |
+| GET    | `/api/v1/chat/:chatId/messages`                | Forward sync or latest/older ordered history   |
 | POST   | `/api/v1/chat/:chatId/message/:messageId/read` | Mark an incoming message read                  |
 | POST   | `/api/v1/chat/:chatId/lastseen`                | Advance the caller's message pointer           |
 | GET    | `/api/v1/user/:userId/chats`                   | List the caller's chats                        |
 
 [REST contracts](docs/api/rest-api.md), [Socket.IO events](docs/api/socket-events.md), [reconnection and limits](docs/architecture/realtime-flow.md). Clients deduplicate by ID, retry ambiguous sends with clientRequestId, and advance history checkpoints only after committed fetched pages. SENT means persisted; READ requires an explicit receipt. Live publication is best effort.
+
+### Open a conversation and scroll up
+
+```http
+GET /api/v1/chat/CHAT_ID/messages?mode=latest&limit=50
+GET /api/v1/chat/CHAT_ID/messages?mode=latest&limit=50&olderCursor=OLDER_CURSOR
+GET /api/v1/chat/CHAT_ID/messages?limit=50&cursor=SAVED_SYNC_CURSOR
+```
+
+The first request loads the most recent 50 messages in chronological display order: 4951–5000 in a 5000-message chat. Latest/older responses contain `{items,olderCursor,headCursor}`. Scroll up with olderCursor; null means no older page. Default/`mode=forward` retains the original `{items,nextCursor,syncCursor}` behavior and cursor format. Maximum page size is 100. Do not mix cursor types or modes.
+
+Register live handlers before joining the authorized Socket.IO room; wait for its acknowledgement before reading history. Room join does not return messages. For a **new** local conversation window, atomically save the initial latest page and its headCursor as the starting forward checkpoint, then forward-sync to catch traffic arriving during loading. Retain a separate olderCursor. If a saved sync checkpoint already exists, resume from it instead of replacing it with a new latest head, which could skip offline messages. Live events, send acknowledgements and older pages never advance/reset that forward checkpoint. Merge by ID and sort by seconds/nanoseconds/ID. See the [complete initialization/reconnect protocol](docs/architecture/realtime-flow.md#history-synchronization) and executable `test/fixtures/history-sync-client.ts`; the real-store integration harness exercises synthetic Bapi/Satadal identities, never personal accounts.
 
 ## Verification and deployment
 

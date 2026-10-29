@@ -9,8 +9,10 @@ const socket = io(SERVER_ORIGIN, {
   transports: ['websocket'],
   auth: { token: await firebaseUser.getIdToken() },
 });
+// Install this before chat:join, so events racing its acknowledgement are buffered.
+socket.on('message:new', (message) => bufferForChatByStableId(message));
 socket.emit('chat:join', { chatId }, (ack) => {
-  if (ack.ok) synchronizeHistoryAndMergeByMessageId(chatId);
+  if (ack.ok) openLatestOrResumeSavedHistoryAndMergeByMessageId(chatId);
 });
 socket.emit(
   'message:send',
@@ -25,6 +27,8 @@ socket.emit(
 ```
 
 Provider authentication uses the Firebase client SDK; internalUserId comes from `/api/v1/auth/me`. Reconnect with a refreshed Firebase ID token when the existing token expires. Invalid handshakes get a generic connect_error. Room joins authorize access but never replace per-event/per-recipient checks. Maximum 100 joined chats per connection, 128 established/pending connections per process and 16 KiB inbound frames. Excess capacity gets the same generic handshake error.
+
+`chat:join` acknowledges `{chatId,syncRequired:true}` only; it never returns history or marks anything read. After the acknowledgement, a new local window loads `GET /api/v1/chat/CHAT_ID/messages?mode=latest&limit=50`, while an existing client resumes forward from its saved syncCursor. Older scrolling is a separate REST request with `mode=latest&olderCursor=...`; no new Socket.IO event is needed. Handlers must filter/store by chatId when several rooms are joined. See the [full room initialization flow](../architecture/realtime-flow.md#history-synchronization).
 
 ## Acknowledgements and validation
 
@@ -54,6 +58,8 @@ User IDs and chat IDs are UUIDs; message IDs/key strings are ASCII letters/digit
 
 Messages/receipts may be emitted more than once. Deduplicate message:new by id and receipts by `(chatId,messageId,userId)`. The success ack and message:new may arrive in either order. Connection-state recovery is not enabled. On reconnect join, buffer live packets and run one history synchronization loop per chat from the last durably committed syncCursor. Persist each fetched history page and its cursor atomically, continuing through nextCursor until null. Live packets and send acknowledgements update the display buffer only; they never advance this checkpoint. If A was missed and later B arrived live, history still fetches both from the old checkpoint, merging by ID. Retry from the last committed page after fetch/storage failure. Reading history is not a read acknowledgement. See [history contract](rest-api.md#message-history) and the executable protocol reference `test/fixtures/history-sync-client.ts`.
 
+The initial latest page can seed headCursor only for a **new** window after an atomic local commit. It must not replace a saved reconnect checkpoint. Older responses never move that checkpoint backward or forward. Sort the deduplicated display by seconds/nanoseconds/ID; Socket.IO emission order is not a substitute for persisted order when asynchronous authorization/publication overlaps. A client reconnects with a valid token, rejoins each intended chat, and syncs from its saved cursor; a server-initiated disconnect may require explicitly reconnecting after refreshing credentials. There is no automatic history replay on room join.
+
 ## Admission and authorization
 
 Cheap local connection, shared IP and shared identity limits run before expensive event verification. Admitted events and private delivery retain fresh token and membership checks. A separate bounded maintenance lane revalidates identities and polls joined chats; Redis lease renewal cannot wait behind that work. Maintenance deadlines or stale/expired identities disconnect clients. The [realtime design](../architecture/realtime-flow.md) documents TTL budgets, metrics, load assumptions and multi-instance/proxy limiter limitations.
@@ -61,3 +67,5 @@ Cheap local connection, shared IP and shared identity limits run before expensiv
 ## Delivery semantics
 
 No `delivered` event or durable delivered state is implemented. Socket emission and adapter publication do not prove recipient receipt. Redis Pub/Sub may lose packets during connection failure; history remains the recovery authority.
+
+SENT means Firestore persistence completed. READ is an explicit authorized incoming-message receipt with a stable server readAt. Last-seen-message is a separate monotonic per-chat Firestore pointer. Presence is approximate Redis online state, not a stored last-online timestamp. Typing is a transient 5-second lease/hint. None of these implies durable delivered status or exactly-once network delivery.

@@ -56,6 +56,41 @@ export class MessagesService {
       throw new AppError('INVALID_ARGUMENT', 'Invalid page size');
     return this.store.list(chatId, limit, cursor);
   }
+  async history(
+    actorId: string,
+    chatId: string,
+    query: {
+      limit: number;
+      mode?: 'forward' | 'latest';
+      cursor?: string;
+      olderCursor?: string;
+    },
+  ) {
+    if (query.mode === 'latest') {
+      if (query.cursor !== undefined)
+        throw new AppError(
+          'INVALID_ARGUMENT',
+          'Use olderCursor, not cursor, with mode=latest',
+        );
+      await this.chats.members(actorId, chatId);
+      if (
+        !Number.isInteger(query.limit) ||
+        query.limit < 1 ||
+        query.limit > 100
+      )
+        throw new AppError('INVALID_ARGUMENT', 'Invalid page size');
+      return this.store.latest(chatId, query.limit, query.olderCursor);
+    }
+    if (
+      (query.mode !== undefined && query.mode !== 'forward') ||
+      query.olderCursor !== undefined
+    )
+      throw new AppError(
+        'INVALID_ARGUMENT',
+        'olderCursor requires mode=latest',
+      );
+    return this.list(actorId, chatId, query.limit, query.cursor);
+  }
   // Receipts own their writes while Messages owns message existence/order reads.
   // Both operations run in one Firestore transaction, without cross-repository access.
   async withMessage<T>(
